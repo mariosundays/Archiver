@@ -1,0 +1,7 @@
+{
+  "name": "Archiver",
+  "description": "Scan a project, decide what to keep, prepare it for archive",
+  "command": "python main.py",
+  "icon": "app/resources/icon.png",
+  "status": "beta"
+}
