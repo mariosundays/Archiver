@@ -604,7 +604,11 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
         return rules.DROP, ("Superseded -- a higher version of this folder "
                             "exists alongside it.")
 
-    best = rules.DROP
+    # Starts as DROP with no reason, and only a SAFER verdict used to record
+    # one -- so a folder where everything genuinely drops came out with an
+    # empty explanation, which is the row most in need of one. Every verdict
+    # now carries the reason that produced it.
+    best = None
     best_reason = ""
 
     for entry in folder.entries:
@@ -622,10 +626,20 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             scene_missing=scene_missing,
             trust_references=trust_references,
         )
-        if rules.VERDICT_ORDER[verdict] < rules.VERDICT_ORDER[best]:
+        if best is None \
+                or rules.VERDICT_ORDER[verdict] < rules.VERDICT_ORDER[best]:
             best, best_reason = verdict, reason
         if best == rules.KEEP:
             break
+
+    if best is None:
+        return rules.REVIEW, "Nothing recognisable in it."
+
+    # Say what the folder is as well as why, so a Drop row explains itself
+    # without the user having to know the category table by heart.
+    label = rules.CATEGORY_LABEL.get(folder.category, "")
+    if label and best_reason and not best_reason.startswith(label):
+        best_reason = "%s — %s" % (label, best_reason)
 
     return best, best_reason
 

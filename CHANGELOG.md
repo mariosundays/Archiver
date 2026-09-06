@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.1 -- 2026-09-06
+
+### Fixed
+
+- **Textures were being flagged as backups on their names.** Seen on a live
+  project: `leather (32) copy.jpg` and
+  `GSG_..._KnittedCheckerFabricWhiteandNavy_preview.jpg` both came back as
+  backups -- the second because the hint `_prev` matched inside the word
+  `_preview`. Name hints now apply to SCENE files only. A `.hip` called
+  `shot_old.hip` really is an old scene and the applications write autosaves
+  by mangling the name, but a texture called `leather_old.jpg` is just a
+  texture, and reading its name as evidence offered live source material for
+  deletion. For assets the FOLDER decides: a backup lives in a folder called
+  backup.
+- The remaining hints matched anywhere in a name; `_prev` and a few others are
+  now matched at the end only, so a marker cannot fire from mid-word.
+
+### Changed
+
+- **Every verdict now carries a reason, and names the category.** A folder
+  where everything genuinely dropped came out with an empty "Why" -- the row
+  most in need of an explanation. The verdict loop started at Drop and only
+  recorded a reason when a safer verdict won. Rows now read
+  "Caches — Regenerable by re-cooking the scene."
+
+### Notes
+
+- 222 tests. Verified on the same real project: backup-flagged files fell from
+  13 to 11, and the only one outside a backup folder is a `.hip`, which is
+  exactly where a name hint should still apply.
+
 ## 0.4.0 -- 2026-09-06
 
 Two changes from using it on real projects.

@@ -114,6 +114,38 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(rules.classify(ROOT + "/tex/smoke.vdb", ROOT),
                          rules.CAT_CACHE)
 
+    def test_asset_names_are_not_read_as_backups(self):
+        # Real false positives from a live project. Artists name textures
+        # this way constantly, and treating the name as evidence offered
+        # source material for deletion.
+        for name in ("leather (32) copy.jpg",
+                     "GSG_A007_KnittedFabricWhiteandNavy_preview.jpg",
+                     "wood_old.jpg", "metal_bak.exr", "plate_temp.tif"):
+            self.assertEqual(
+                rules.classify(ROOT + "/tex/" + name, ROOT),
+                rules.CAT_SOURCE,
+                "%r was read as a backup on its name alone" % name)
+
+    def test_preview_does_not_match_the_prev_hint(self):
+        # "_prev" as a plain substring fired inside "_preview".
+        self.assertFalse(rules.is_backup_name(ROOT + "/tex/x_preview.jpg"))
+        self.assertFalse(rules.is_backup_name(ROOT + "/tex/previews.png"))
+
+    def test_scene_names_still_count(self):
+        # A scene called shot_old.hip really is an old scene, and the
+        # applications write autosaves by mangling the name.
+        for name in ("shot_old.hip", "shot_copy.c4d", "shot.hip.bak",
+                     "shot.hip.3", "shot_bak.c4d"):
+            self.assertTrue(rules.is_backup_name(ROOT + "/scenes/" + name),
+                            "%r should read as a backup" % name)
+
+    def test_a_backup_folder_still_decides(self):
+        # Mario's rule: backups live in a folder called backup.
+        self.assertEqual(rules.classify(ROOT + "/backup/leather.jpg", ROOT),
+                         rules.CAT_BACKUP)
+        self.assertEqual(rules.classify(ROOT + "/tmp/plate.exr", ROOT),
+                         rules.CAT_TEMP)
+
     def test_scene_inside_a_backup_folder_is_a_backup(self):
         # A .hip in backup/ is a backup copy of a scene -- that is what the
         # folder is for. Treating it as a live scene made the whole backup

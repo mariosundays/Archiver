@@ -430,3 +430,47 @@ class TestEdges(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEveryVerdictExplainsItself(unittest.TestCase):
+    """
+    A Drop row with no reason is the one most in need of one.
+
+    _folder_verdict started at DROP with an empty reason and only recorded one
+    when a SAFER verdict won, so a folder where everything genuinely dropped
+    came out unexplained.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_why_").replace("\\", "/")
+        fake_hip(self.root + "/scenes/shot.hip", ["$HIP/tex/a.exr"])
+        write(self.root + "/tex/a.exr")
+        write(self.root + "/tmp/junk.tmp")
+        write(self.root + "/backup/old.hip")
+        write(self.root + "/cache_old/orphan.vdb")
+        os.makedirs(self.root + "/hollow")
+        self.result = scanner.scan(self.root)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_every_folder_has_a_reason(self):
+        for folder in self.result.folders:
+            if not folder.count and not folder.is_empty:
+                continue        # pure container
+            self.assertTrue(folder.reason,
+                            "%s (%s) has no reason"
+                            % (folder.relative, folder.verdict))
+
+    def test_drop_rows_name_the_category(self):
+        drops = [f for f in self.result.folders
+                 if f.verdict == rules.DROP and f.count]
+        self.assertTrue(drops)
+        for folder in drops:
+            self.assertIn("—", folder.reason,
+                          "%s does not say what it is" % folder.relative)
+
+    def test_empty_folder_reason_is_kept(self):
+        empty = [f for f in self.result.folders if f.is_empty]
+        self.assertTrue(empty)
+        self.assertIn("Empty folder", empty[0].reason)

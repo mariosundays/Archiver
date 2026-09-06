@@ -261,8 +261,23 @@ VERSION_RE = re.compile(r"[._\-]v(\d{1,4})\b", re.IGNORECASE)
 
 # Names that mark a file as disposable whatever else is true.
 BACKUP_HINTS = ("_bak", ".bak", "_backup", "_old", "_tmp", "_temp",
-                "_copy", " copy", "_autosave", "-old", "_prev",
+                "_copy", " copy", "_autosave", "-old",
                 "_previous", "_wip_old")
+
+# Names matched at the END only, so a marker cannot fire from the middle of a
+# word. "_prev" as a plain substring matched "_preview", which is an ordinary
+# part of a texture name -- that one hint turned a live GSG material preview
+# into a backup.
+_BACKUP_TAILS = ("_prev", "-bak", "-backup", "-copy", "_v0_old")
+
+# A name hint is only trusted for SCENE files.
+#
+# A scene called shot_old.hip really is an old scene, and Houdini and C4D both
+# write autosaves by mangling the name. A TEXTURE called leather_old.jpg is
+# just a texture with "old" in its name -- artists name assets that way
+# constantly, and reading the name as evidence offered live source material
+# for deletion. For everything else the FOLDER decides: a backup lives in a
+# folder called backup.
 
 # Houdini writes autosaves as scene.hip.bak, scene.hip.1, scene.hip.2 ...
 _HIP_AUTOSAVE = re.compile(r"\.hip(?:lc|nc)?\.(?:bak|\d+)$", re.IGNORECASE)
@@ -389,12 +404,32 @@ def category_from_ext(path):
 
 
 def is_backup_name(path):
-    """True when a filename marks itself as a backup or autosave."""
+    """
+    True when a filename marks itself as a backup or autosave.
+
+    Applies the name hints only to SCENE files. On assets the hints produced
+    real false positives on a live project: "leather (32) copy.jpg" and
+    "..._KnittedCheckerFabricWhiteandNavy_preview.jpg" were both flagged --
+    the second because "_prev" matched inside "_preview". Neither is a backup;
+    they are how artists name textures.
+
+    An autosave pattern still fires whatever the extension, because those are
+    written by the application and unambiguous.
+    """
     name = os.path.basename(key(path))
+
+    # Application-written autosaves: shot.hip.bak, shot.hip.3, shot_bak.c4d.
     if _HIP_AUTOSAVE.search(name) or _C4D_BACKUP.search(name):
         return True
+
+    if file_ext(name) not in scene_parser.SCENE_EXTS:
+        return False
+
     stem = os.path.splitext(name)[0]
-    return any(hint in stem for hint in BACKUP_HINTS)
+    if any(hint in stem for hint in BACKUP_HINTS):
+        return True
+    # Tail-only hints, so a marker cannot fire from mid-word.
+    return stem.endswith(_BACKUP_TAILS)
 
 
 def version_of(path):

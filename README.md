@@ -150,7 +150,7 @@ Archiver/
 │   ├── actions.py        the ONLY module that writes
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
-└── tests/                215 tests: python tests/run_all.py
+└── tests/                222 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -166,7 +166,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-215 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+222 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -174,7 +174,7 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.4.0** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
+**v0.4.1** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with
