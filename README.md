@@ -90,11 +90,24 @@ you should always know which side of it you are on.
 | 2 | **What can go** — findings with reasons; delete empty folders | done |
 | 3 | **Select** — folder-level tri-state, nothing ticked by default | done |
 | 4 | **Review** — what you chose, and where you overrode the scan | done |
-| 5 | **Approve** — move the selection to `_toDelete/` | not built |
+| 5 | **Approve** — move the selection to `_toDelete/`, with restore | done |
 | 6 | **Backup** — copy the project out, optionally zipped | not built |
 
-Steps 1–4 are pure reads. Deleting empty folders is the only action this
-version performs, and it uses `os.rmdir` rather than `shutil.rmtree` so a
+Steps 1–4 are pure reads.
+
+**Approving never deletes.** It *moves* the chosen folders into
+`<project>/_toDelete`, keeping their relative path, and writes a manifest
+recording where each came from. You then check the project still opens and
+delete that folder yourself when satisfied — or press Restore, which reads the
+manifest and puts everything back, so it works even after closing the app.
+
+Staging refuses rather than guesses in four cases, each a real way to lose
+work: a path outside the project, the project root itself, anything already
+staged, and a path that vanished since the scan. A restore whose destination
+has been filled again is refused too, never merged — silently combining two
+versions of a cache is the damage this tool exists to prevent.
+
+Deleting empty folders uses `os.rmdir` rather than `shutil.rmtree`, so a
 folder that has gained a file since the scan makes the call fail loudly
 instead of destroying it.
 
@@ -126,7 +139,7 @@ Archiver/
 │   ├── actions.py        the ONLY module that writes
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
-└── tests/                135 tests: python tests/run_all.py
+└── tests/                166 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -142,14 +155,15 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-135 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
-skip cleanly when PySide6 is absent.
+166 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+skip cleanly when PySide6 is absent. The staging tests are the most paranoid
+in the suite: most of them assert what must NOT happen.
 
 ---
 
 ## Status
 
-**v0.1.0** — first release. See [CHANGELOG.md](CHANGELOG.md).
+**v0.2.0** — steps 1–5 of the wizard. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with

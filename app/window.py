@@ -16,10 +16,11 @@
 """
 The main window: check the project, see what can go, select, review.
 
-Steps 1-4 of the wizard. All of it reads except one action -- deleting empty
-folders -- which is delegated to core.actions and cannot lose data, since an
-empty folder has nothing in it at any depth. Steps 5 and 6 (move to
-_toDelete, then archive out) are not built.
+Steps 1-5 of the wizard. Everything reads except two actions, both delegated
+to core.actions: deleting empty folders, and moving the selection into
+_toDelete. Neither deletes anything that holds data -- the first only removes
+directories with nothing in them at any depth, and the second moves rather
+than deletes and can be undone. Step 6 (archive out) is not built.
 
 The scan runs on a QThreadPool worker. A cold network project can take a while
 and a frozen window during it would be unacceptable.
@@ -333,6 +334,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selection_label = QtWidgets.QLabel("Nothing selected")
         self.selection_label.setObjectName("hint")
 
+        # Only shown when something is actually staged -- a permanent
+        # Restore button on a project with an empty _toDelete is a puzzle.
+        self.restore_button = QtWidgets.QPushButton("Restore")
+        self.restore_button.clicked.connect(self._restore)
+        self.restore_button.hide()
+
         self.review_button = QtWidgets.QPushButton("Review selection")
         self.review_button.setObjectName("primary")
         self.review_button.clicked.connect(self._review)
@@ -342,6 +349,7 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(self.clear_selection)
         row.addSpacing(12)
         row.addWidget(self.selection_label, 1)
+        row.addWidget(self.restore_button)
         row.addWidget(self.review_button)
         return row
 
@@ -547,6 +555,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_selection_label()
         self._fill_findings()
         self._update_summary()
+        self._update_restore_button()
         self.prune_button.setEnabled(bool(result.empty_folders))
         self.prune_button.setText(
             "Delete %d empty folders" % len(result.empty_folders)
@@ -804,6 +813,15 @@ class MainWindow(QtWidgets.QMainWindow):
         finally:
             self._syncing = False
 
+    def _update_restore_button(self):
+        entries = actions.read_manifest(self.result.root) if self.result else []
+        if entries:
+            self.restore_button.setText(
+                "Restore %d from %s" % (len(entries), actions.STAGING))
+            self.restore_button.show()
+        else:
+            self.restore_button.hide()
+
     def _update_selection_label(self):
         if self.selection is None or self.selection.is_empty():
             self.selection_label.setText("Nothing selected")
@@ -845,6 +863,76 @@ class MainWindow(QtWidgets.QMainWindow):
     def _review(self):
         dialog = ReviewDialog(self.selection, self.result, self)
         dialog.exec()
+        if dialog.approved:
+            self._approve()
+
+    def _approve(self):
+        """
+        Step 5: move the selection into _toDelete.
+
+        The selection holds tree nodes; staging takes paths, and only the
+        top-most selected ones -- moving a parent already carries its
+        children, and asking for both would fail the second time with the
+        source gone.
+        """
+        paths = [node.path for node in self.selection.nodes()]
+        moved, failed = actions.stage(self.result.root, paths, dry_run=False)
+
+        lines = ["Moved %d folder%s into %s."
+                 % (len(moved), "" if len(moved) == 1 else "s",
+                    actions.STAGING)]
+        if moved:
+            lines.append("")
+            lines.append("Delete that folder yourself once you are satisfied "
+                         "the project still works, or use Restore to put "
+                         "everything back.")
+
+        if failed:
+            lines.append("")
+            lines.append("%d could not be moved:" % len(failed))
+            for path, why in failed[:8]:
+                lines.append("    %s — %s"
+                             % (path[len(self.result.root):].lstrip("/"), why))
+            QtWidgets.QMessageBox.warning(self, "Approve", "\n".join(lines))
+        else:
+            QtWidgets.QMessageBox.information(self, "Approve",
+                                              "\n".join(lines))
+
+        self.status.showMessage(lines[0])
+        self.start_scan()       # what is on screen no longer matches the disk
+
+    def _restore(self):
+        entries = actions.read_manifest(self.result.root)
+        if not entries:
+            return
+
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle("Restore")
+        box.setIcon(QtWidgets.QMessageBox.Question)
+        box.setText("Put %d staged folder%s back?"
+                    % (len(entries), "" if len(entries) == 1 else "s"))
+        box.setInformativeText(
+            "Anything whose original location has been filled again since "
+            "staging is left alone and reported.")
+        box.setStandardButtons(QtWidgets.QMessageBox.Cancel |
+                               QtWidgets.QMessageBox.Yes)
+        box.setDefaultButton(QtWidgets.QMessageBox.Yes)
+        if box.exec() != QtWidgets.QMessageBox.Yes:
+            return
+
+        restored, failed = actions.restore(self.result.root, dry_run=False)
+        message = "Restored %d folder%s." % (len(restored),
+                                             "" if len(restored) == 1 else "s")
+        if failed:
+            message += "\n\n%d could not be restored:\n" % len(failed)
+            message += "\n".join("    %s — %s" % (path, why)
+                                 for path, why in failed[:8])
+            QtWidgets.QMessageBox.warning(self, "Restore", message)
+        else:
+            QtWidgets.QMessageBox.information(self, "Restore", message)
+
+        self.status.showMessage(message.splitlines()[0])
+        self.start_scan()
 
     def _tree_activated(self, item, _column):
         # Double-click toggles the branch. There is no drill-down mode any

@@ -165,15 +165,34 @@ class ReviewDialog(QtWidgets.QDialog):
         self.approve = QtWidgets.QPushButton("Approve — move to _toDelete")
         self.approve.setObjectName("primary")
         self.approve.clicked.connect(self._accept)
-        # Step 5 is not built. A live button that silently does nothing is
-        # worse than a disabled one that says why.
-        self.approve.setEnabled(False)
-        self.approve.setToolTip("Not built yet — step 5.")
 
         row.addWidget(back)
         row.addWidget(self.approve)
         return row
 
     def _accept(self):
+        """
+        Last confirmation before anything moves.
+
+        The dialog above already lists what was chosen, so this does not
+        repeat it -- it states the one fact the list does not: this is the
+        step that touches the disk.
+        """
+        box = QtWidgets.QMessageBox(self)
+        box.setWindowTitle("Approve")
+        box.setIcon(QtWidgets.QMessageBox.Question)
+        box.setText("Move %s into _toDelete?"
+                    % human(self.selection.total_bytes()))
+        box.setInformativeText(
+            "Files are MOVED, not deleted, and the folder structure is kept "
+            "so anything can be put back.\n\n"
+            "Check the project still opens, then delete _toDelete yourself "
+            "when you are satisfied.")
+        box.setStandardButtons(QtWidgets.QMessageBox.Cancel |
+                               QtWidgets.QMessageBox.Yes)
+        box.setDefaultButton(QtWidgets.QMessageBox.Cancel)
+        if box.exec() != QtWidgets.QMessageBox.Yes:
+            return
+
         self.approved = True
         self.accept()

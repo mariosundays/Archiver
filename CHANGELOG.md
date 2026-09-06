@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.2.0 -- 2026-09-06
+
+Step 5: approving a selection now does something. It moves the chosen folders
+into `<project>/_toDelete` and can put them back.
+
+### Added
+
+- **Staging.** Approve moves the selection into `_toDelete`, preserving each
+  folder's relative path, and writes `archiver_manifest.json` recording where
+  everything came from. Nothing is deleted -- you check the project still
+  opens and remove that folder yourself.
+- **Restore.** Reads the manifest rather than inferring from the layout, so it
+  works after closing and reopening the app. The button appears only when
+  something is actually staged.
+- Staging refuses rather than guesses on: a path outside the project, the
+  project root itself, anything already staged, and a path that vanished since
+  the scan. Restore refuses a destination that has been filled again rather
+  than merging into it.
+
+### Fixed
+
+- **A scene file inside `backup/` or `tmp/` was treated as a live scene**, so
+  those folders came out *keep* and "tick all Drop" skipped them entirely --
+  on a test project it selected 1 folder where it should have selected 2. A
+  `.hip` in `backup/` is a backup copy of a scene; that is what the folder is
+  for. The folder now outranks the extension for these two cases, as it
+  already did for every other file type.
+
+### Notes
+
+- A move inside one filesystem is a rename: instant, and atomic per folder.
+  That is why staging lives inside the project rather than on another drive,
+  where it would be a copy-then-delete that can half-finish on a 200 GB cache.
+- 166 tests. The staging suite is the most paranoid in the project -- most of
+  its cases assert what must NOT happen, and each destructive path was also
+  verified by hand against real files.
+
 ## 0.1.0 -- 2026-09-06
 
 First release. Built and validated in one session against a real archived job

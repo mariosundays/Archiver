@@ -395,11 +395,15 @@ def classify(path, root, is_dir=False):
     Extension and folder are both evidence and neither always wins. The
     ordering below is what experience with these folder trees says is right:
 
-      - A scene file is a scene wherever it sits.
-      - A self-declared backup name beats its folder: a _bak.c4d in scenes/
+      - A self-declared backup name beats everything: a _bak.c4d in scenes/
         is a backup, not a scene.
-      - Otherwise the FOLDER wins for ambiguous media, because an .exr means
-        nothing on its own -- render/, tex/ and plates/ are what tell you.
+      - So does a backup or temp FOLDER. A scene inside backup/ is a backup
+        copy of a scene -- that is what the folder is for -- and treating it
+        as a live scene made the folder Keep and left it out of "tick all
+        Drop" entirely.
+      - Otherwise a scene file is a scene wherever it sits.
+      - The FOLDER wins for ambiguous media, because an .exr means nothing on
+        its own -- render/, tex/ and plates/ are what tell you.
       - Extension wins for unambiguous types: a .vdb in tex/ is still a cache.
     """
     if is_dir:
@@ -407,13 +411,17 @@ def classify(path, root, is_dir=False):
 
     ext = file_ext(path)
 
-    if ext in scene_parser.SCENE_EXTS and not is_backup_name(path):
-        return CAT_SCENE
     if is_backup_name(path):
         return CAT_BACKUP
 
-    by_ext = category_from_ext(path)
     by_folder = category_from_path(path, root)
+    if by_folder in (CAT_BACKUP, CAT_TEMP):
+        return by_folder
+
+    if ext in scene_parser.SCENE_EXTS:
+        return CAT_SCENE
+
+    by_ext = category_from_ext(path)
 
     # Ambiguous media -- images and video -- take the folder's word.
     if by_ext is None:

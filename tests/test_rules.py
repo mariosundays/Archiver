@@ -114,6 +114,21 @@ class TestClassify(unittest.TestCase):
         self.assertEqual(rules.classify(ROOT + "/tex/smoke.vdb", ROOT),
                          rules.CAT_CACHE)
 
+    def test_scene_inside_a_backup_folder_is_a_backup(self):
+        # A .hip in backup/ is a backup copy of a scene -- that is what the
+        # folder is for. Treating it as a live scene made the whole backup
+        # folder Keep, so "tick all Drop" silently skipped it.
+        self.assertEqual(rules.classify(ROOT + "/backup/old.hip", ROOT),
+                         rules.CAT_BACKUP)
+        self.assertEqual(rules.classify(ROOT + "/tmp/scratch.hip", ROOT),
+                         rules.CAT_TEMP)
+
+    def test_scene_outside_those_folders_is_still_a_scene(self):
+        self.assertEqual(rules.classify(ROOT + "/scenes/shot.hip", ROOT),
+                         rules.CAT_SCENE)
+        self.assertEqual(rules.classify(ROOT + "/shot.c4d", ROOT),
+                         rules.CAT_SCENE)
+
     def test_backup_folder_swallows_contents(self):
         # ...but a backup folder outranks even that.
         self.assertEqual(rules.classify(ROOT + "/backup/smoke.vdb", ROOT),
