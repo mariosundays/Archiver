@@ -720,13 +720,11 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             best_reason = ("Superseded -- a higher version of this folder "
                            "exists alongside it.")
         if signals:
+            # Recorded, not appended to the reason. Writing it into the text
+            # put it past where the Why column truncates, so every STRONG was
+            # invisible; it has its own column and the detail strip now.
             folder.confidence = rules.confidence(signals)
             folder.signals = signals
-            best_reason += ("  %s -- %d signal%s agree: %s."
-                            % (rules.CONFIDENCE_LABEL[folder.confidence],
-                               len(signals),
-                               "" if len(signals) == 1 else "s",
-                               "; ".join(signals)))
 
     # A slow sim is regenerable and that is beside the point: re-running a
     # FLIP or pyro cache is an afternoon. Say so, so "Drop" never reads as

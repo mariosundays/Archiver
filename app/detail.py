@@ -126,7 +126,18 @@ class DetailPanel(QtWidgets.QFrame):
         self.facts.setText("   ".join(p for p in parts if p))
 
         colour = VERDICT_FILL.get(verdict, VERDICT_FILL[None]).lighter(150)
-        self.why.setText(folder.reason or "")
+
+        # The reason, then the evidence behind it. Naming the signals is the
+        # point: each is a claim the user can go and check, which is what a
+        # percentage would have replaced with a number nobody can verify.
+        text = folder.reason or ""
+        if getattr(folder, "signals", None):
+            text += ("   %s — %d signal%s agree: %s."
+                     % (rules.CONFIDENCE_LABEL[folder.confidence],
+                        len(folder.signals),
+                        "" if len(folder.signals) == 1 else "s",
+                        "; ".join(folder.signals)))
+        self.why.setText(text)
         self.why.setStyleSheet("color: %s;" % colour.name())
 
         self._show_users(folder)

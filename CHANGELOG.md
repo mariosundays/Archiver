@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.1 -- 2026-09-06
+
+### Fixed
+
+- **The confidence words were invisible.** They were appended to the end of
+  the reason, which put them past where the Why column truncates -- so every
+  STRONG was computed correctly and never shown. Confidence now has its own
+  column, coloured by strength, with the signals in its tooltip and spelled
+  out in full in the detail strip.
+
+### Added
+
+- **Click a column header to sort**, on both the findings table and the
+  overview tree. Sizes, file counts, verdicts, confidence and age sort by
+  VALUE, not by their text -- "1.9 GB" would otherwise sort above "293.2 MB"
+  because "1" precedes "2", and a size column that lies about order is worse
+  than no sorting at all.
+
 ## 0.6.0 -- 2026-09-06
 
 ### Fixed -- an entire project of dailies had no detectable version

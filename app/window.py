@@ -90,6 +90,16 @@ QTabBar::tab:selected { background: #35566e; }
 """ % {"dark": DARK, "panel": PANEL, "text": TEXT, "dim": DIM}
 
 
+# Strongest first, so sorting the column puts the safest drops at the top.
+_CONFIDENCE_ORDER = {rules.STRONG: 0, rules.MODERATE: 1, rules.WEAK: 2}
+
+_CONFIDENCE_COLOUR = {
+    rules.STRONG: QtGui.QColor("#7fb48f"),
+    rules.MODERATE: QtGui.QColor("#c2a34a"),
+    rules.WEAK: QtGui.QColor("#9aa0a6"),
+}
+
+
 def _short_path(relative, keep=2):
     """
     The tail of a path, which is the part that identifies it.
@@ -129,6 +139,27 @@ def _age_of(node):
         if child.report and child.report.mtime > newest:
             newest = child.report.mtime
     return scanner.age_label(newest) if newest else ""
+
+
+class SortableItem(QtWidgets.QTreeWidgetItem):
+    """
+    A row that sorts columns by VALUE, not by the text shown.
+
+    Without this "1.9 GB" sorts above "293.2 MB" because "1" precedes "2",
+    and a size column that lies about order is worse than none. Each sortable
+    column carries its real number in a data role; anything without one falls
+    back to comparing text.
+    """
+
+    SORT_KEY = Qt.UserRole + 20
+
+    def __lt__(self, other):
+        column = self.treeWidget().sortColumn() if self.treeWidget() else 0
+        mine = self.data(column, self.SORT_KEY)
+        theirs = other.data(column, self.SORT_KEY)
+        if mine is not None and theirs is not None:
+            return mine < theirs
+        return self.text(column).lower() < other.text(column).lower()
 
 
 class ScanWorker(QtCore.QObject, QtCore.QRunnable):
@@ -282,7 +313,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_tree.setAlternatingRowColors(True)
         self.folder_tree.setRootIsDecorated(True)
         self.folder_tree.setUniformRowHeights(True)
-        self.folder_tree.setSortingEnabled(False)
+        # Sorting a TREE re-orders siblings within each parent, which is what
+        # you want here: the hierarchy is preserved, the children reorder.
+        self.folder_tree.setSortingEnabled(True)
         # No inline rename. A double-click means "open this folder", and an
         # accidental edit box in a tool that will later move files is a hazard.
         self.folder_tree.setEditTriggers(
@@ -432,9 +465,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.findings = QtWidgets.QTreeWidget()
         self.findings.setHeaderLabels(
-            ["Folder", "Size", "Files", "Verdict", "Why", "Age"])
+            ["Folder", "Size", "Files", "Verdict", "Confidence", "Why",
+             "Age"])
         self.findings.setAlternatingRowColors(True)
         self.findings.setRootIsDecorated(False)
+        # Click a header to sort. Sizes and counts sort by value via
+        # SortableItem, so "1.9 GB" cannot come out above "293 MB".
+        self.findings.setSortingEnabled(True)
         self.findings.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers)
         self.findings.itemChanged.connect(self._on_finding_checked)
@@ -442,8 +479,10 @@ class MainWindow(QtWidgets.QMainWindow):
         add_reveal_menu(self.findings, _node_path)
         header = self.findings.header()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
-        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
-        self.findings.setColumnWidth(0, 340)
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)
+        header.setSectionsClickable(True)
+        self.findings.setColumnWidth(0, 300)
+        self.findings.setColumnWidth(4, 90)
         layout.addWidget(self.findings, 1)
 
         # The "Why" column truncates on every row, and the reasons are longer
@@ -1013,23 +1052,52 @@ class MainWindow(QtWidgets.QMainWindow):
             if not folder.count and not folder.is_empty:
                 continue
 
-            item = QtWidgets.QTreeWidgetItem(self.findings)
+            item = SortableItem(self.findings)
             # The relative path is long and every row shares a prefix, so a
             # plain elide hides the only part that identifies the folder.
             # Lead with the name, keep the path behind it and in the tooltip.
             item.setText(0, _short_path(folder.relative))
             item.setToolTip(0, folder.path)
+            item.setData(0, SortableItem.SORT_KEY, folder.relative.lower())
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(0, Qt.Unchecked)
+
             item.setText(1, folder.human_size)
+            item.setData(1, SortableItem.SORT_KEY, folder.size)
             item.setText(2, "{:,}".format(folder.count))
+            item.setData(2, SortableItem.SORT_KEY, folder.count)
+
             item.setText(3, rules.VERDICT_LABEL[folder.verdict])
             item.setIcon(3, verdict_icon(folder.verdict))
-            item.setText(4, folder.reason)
-            item.setToolTip(4, folder.reason)
-            item.setText(5, folder.age)
+            item.setData(3, SortableItem.SORT_KEY,
+                         rules.VERDICT_ORDER.get(folder.verdict, 1))
             item.setForeground(3, QtGui.QBrush(
                 VERDICT_FILL[folder.verdict].lighter(160)))
+
+            # Confidence gets its own column. It was being written into the
+            # end of the reason, where the Why column truncated it away on
+            # every row -- the STRONG was there and unreadable.
+            if folder.confidence:
+                item.setText(4, rules.CONFIDENCE_LABEL[folder.confidence])
+                item.setData(4, SortableItem.SORT_KEY,
+                             _CONFIDENCE_ORDER.get(folder.confidence, 3))
+                item.setForeground(4, QtGui.QBrush(
+                    _CONFIDENCE_COLOUR.get(folder.confidence,
+                                           QtGui.QColor(DIM))))
+                if folder.signals:
+                    item.setToolTip(4, "%d signal%s agree:\n  %s"
+                                    % (len(folder.signals),
+                                       "" if len(folder.signals) == 1
+                                       else "s",
+                                       "\n  ".join(folder.signals)))
+            else:
+                item.setData(4, SortableItem.SORT_KEY, 9)
+
+            item.setText(5, folder.reason)
+            item.setToolTip(5, folder.reason)
+            item.setText(6, folder.age)
+            item.setData(6, SortableItem.SORT_KEY, -(folder.mtime or 0))
+
             item.setData(0, Qt.UserRole, folder)
             total += folder.size
             shown += 1

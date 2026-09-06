@@ -688,7 +688,11 @@ class TestEmbeddedVersionFolders(unittest.TestCase):
                             rules.DROP)
 
     def test_a_dropped_row_carries_its_confidence(self):
+        # Confidence lives in its own field, NOT appended to the reason:
+        # written into the text it fell past where the Why column truncates,
+        # so every STRONG was computed and invisible.
         folder = self.folder("SH010_v002_SH010")
         self.assertEqual(folder.confidence, rules.STRONG)
-        self.assertIn("STRONG", folder.reason)
-        self.assertIn("newer version", folder.reason)
+        self.assertGreaterEqual(len(folder.signals), 2)
+        self.assertIn("newer version", " ".join(folder.signals))
+        self.assertNotIn("STRONG", folder.reason)
