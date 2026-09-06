@@ -109,12 +109,27 @@ class ReviewDialog(QtWidgets.QDialog):
                 % (len(overrides), "" if len(overrides) == 1 else "s", names))
 
         if self.result is not None and self.result.opaque_scenes:
-            warnings.append(
-                "%d scene%s in this project could not be read, so nothing "
-                "was verified against them. A cache or geometry file they "
-                "use looks unreferenced here."
-                % (len(self.result.opaque_scenes),
-                   "" if len(self.result.opaque_scenes) == 1 else "s"))
+            stale = len(getattr(self.result, "stale_sidecars", []))
+            unread = len(self.result.opaque_scenes) - stale
+
+            if unread:
+                warnings.append(
+                    "%d scene%s in this project could not be read, so nothing "
+                    "was verified against them. A cache or geometry file they "
+                    "use looks unreferenced here. Run Archiver Asset Export "
+                    "inside Cinema 4D to fix this."
+                    % (unread, "" if unread == 1 else "s"))
+
+            # Stale evidence still protects what it names, so this is a
+            # weaker warning than the one above -- but it has to be said,
+            # or a cache added since the export looks unreferenced.
+            if stale:
+                warnings.append(
+                    "%d scene%s been saved since its asset list was exported. "
+                    "What that list names is still protected, but anything "
+                    "added to the scene since is not. Re-run Archiver Asset "
+                    "Export in Cinema 4D."
+                    % (stale, " has" if stale == 1 else "s have"))
 
         return warnings
 

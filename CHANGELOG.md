@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.5.0 -- 2026-09-06
+
+### Added
+
+- **Cinema 4D asset export — the `.c4d` blind spot is closed.** Modern `.c4d`
+  is a proprietary compressed container with not one asset path in plaintext,
+  so Archiver could read nothing from it. On a real 14 GB job that meant **38
+  of 63 scenes were unreadable**, every cache in the project reported as
+  UNVERIFIED, and no way to tell a re-cookable sim from a 3 GB `.abc` that a
+  scene still needs.
+
+  Cinema 4D knows the answer even though the file will not say it, so it now
+  writes it down. `c4d_plugin/ArchiverExport` adds **Extensions → Archiver
+  Asset Export**, which dumps each scene's asset list to a JSON sidecar beside
+  the scene; the scanner reads that instead of scraping.
+
+  ```
+  shot_010.c4d
+  shot_010.c4d.assets.json
+  ```
+
+  Three scopes: this scene, every scene in its folder, or every scene under a
+  chosen project folder. A batch opens and closes each scene in turn, so a
+  63-scene job is one unattended pass. Install with
+  `c4d_plugin/sync_to_c4d.ps1`, then restart C4D.
+
+  Verified end to end against the real project's own opaque scene bytes: a
+  cache that read *"UNVERIFIED — a scene here could not be read"* becomes
+  *"Regenerable — a scene in this project reads it, so it can be re-cooked"*,
+  naming the scene in the Used by column.
+
+- **One sidecar per scene, not one index per project.** Staleness becomes a
+  per-scene fact that can actually be checked, the data travels with a scene
+  that gets copied elsewhere, and re-exporting one scene does not rewrite the
+  other sixty-two.
+
+- **A stale sidecar is evidence, not truth** — the safety rule the whole
+  feature rests on. A scene saved since its export may have gained a cache the
+  list does not name. So a stale sidecar's paths still protect what they name
+  (that direction cannot lose data), but the scene stays counted as unreadable
+  and **nothing is promoted to Drop on old evidence**. A cache added since the
+  export therefore stays REVIEW rather than being confidently dropped — which
+  is exactly the failure that would delete live work.
+
+  Staleness is checked two ways, because either alone has a hole. The recorded
+  scene mtime catches a scene *rolled back* to an older version — older than
+  its sidecar, so a file-time comparison alone would wrongly call it fresh.
+  The file comparison catches a sidecar copied in from another machine whose
+  recorded mtime happens to match.
+
+- Review screen and report **split the warning in two**: how many scenes could
+  not be read at all, and how many have been saved since their export. Both
+  now name the fix instead of only stating the problem. `stale_sidecars` is in
+  the JSON report.
+
+### Notes
+
+- **A malformed or truncated sidecar reads as absent, never as empty.** Those
+  mean opposite things — "no evidence" versus "this scene references nothing"
+  — and confusing them makes every cache in the project look orphaned. The
+  sidecar is written to a temp file and moved into place for the same reason.
+- **The plugin is a thin shell over tested code.** Claude cannot drive C4D's
+  UI or read its console, so every decision worth getting wrong lives in
+  `core/c4d_assets.py` and `core/sidecar.py` — plain modules with tests. The
+  `.pyp` is exercised too, by executing it against a stand-in `c4d` module:
+  that it loads, that a document's assets reach a sidecar, that one corrupt
+  scene in sixty does not stop the run and every document is still closed.
+- **`sync_to_c4d.ps1` copies Archiver's own `core/` modules** rather than
+  shipping a rewritten copy, so the writer and the reader cannot drift. That
+  drift is a live problem in the Iris bridge, whose hand-maintained copy of a
+  pattern list has fallen out of step with the original.
+- 313 tests (was 243).
+
 ## 0.4.6 -- 2026-09-06
 
 ### Added

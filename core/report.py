@@ -58,16 +58,30 @@ def summary_lines(result):
     # The most important thing on the page when it applies. A scene we could
     # not read means every verdict leaning on references is weaker, and the
     # user has to know that before acting on any of it.
-    if result.opaque_scenes:
-        count = len(result.opaque_scenes)
+    stale = getattr(result, "stale_sidecars", [])
+    unread = len(result.opaque_scenes) - len(stale)
+
+    if unread:
         lines.append("")
         lines.append("  !  %d scene%s could not be read (Cinema 4D R20+ "
                      "files are compressed)."
-                     % (count, "" if count == 1 else "s"))
+                     % (unread, "" if unread == 1 else "s"))
         lines.append("     Nothing was checked against them, so caches and "
                      "geometry they use")
         lines.append("     look unreferenced. Verdicts here lean on file "
                      "type and location only.")
+        lines.append("     Fix: run Archiver Asset Export inside Cinema 4D "
+                     "to write each scene's")
+        lines.append("     asset list beside it.")
+
+    if stale:
+        lines.append("")
+        lines.append("  !  %d scene%s saved since its asset list was "
+                     "exported."
+                     % (len(stale), " was" if len(stale) == 1 else "s were"))
+        lines.append("     What the list names is still protected; anything "
+                     "added since is not.")
+        lines.append("     Re-run Archiver Asset Export in Cinema 4D.")
 
     if result.empty_folders:
         lines.append("")
@@ -158,6 +172,7 @@ def as_dict(result):
         "duration_seconds": round(result.duration, 2),
         "scenes": [s.path for s in result.scenes],
         "unreadable_scenes": result.opaque_scenes,
+        "stale_sidecars": getattr(result, "stale_sidecars", []),
         "references_trustworthy": result.references_trustworthy,
         "empty_folders": result.empty_folders,
         "errors": result.errors,

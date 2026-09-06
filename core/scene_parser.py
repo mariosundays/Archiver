@@ -26,11 +26,14 @@ file archived away, so every ambiguous case resolves toward "referenced".
 This is the Houdini-free descendant of AssetCleaner's paths_in_hip(),
 generalised past .hip to the other formats a project folder actually contains.
 
-No imports beyond the standard library. Never imports hou, c4d, or Qt.
+Standard library only, plus core.sidecar -- which is itself stdlib-only.
+Never imports hou, c4d, or Qt.
 """
 
 import os
 import re
+
+from . import sidecar
 
 # ---------------------------------------------------------------------------
 # Scene formats we can read
@@ -293,6 +296,67 @@ def paths_in_scene(scene_path, project=None):
         found |= _c4d_relative_paths(data, scene_dir)
 
     return found
+
+
+def paths_from_sidecar(scene_path, project=None):
+    """
+    What a scene's asset sidecar says it references, or (None, False).
+
+    The way in for scenes we cannot read at all: the application exported its
+    own asset list beside the scene, so read that. See core/sidecar.py for the
+    format and the freshness rule.
+
+    Returns (paths, fresh). paths is a set in the same lower-case absolute
+    form paths_in_scene() returns, so callers cannot tell the two apart --
+    relative entries resolve against the scene folder and the project, and
+    sequences expand against the disk, exactly as a scraped path would.
+
+    None means no usable sidecar, which is NOT the same as an empty set. An
+    empty set says the app looked and found nothing; None says we never
+    looked. Only the first is evidence.
+    """
+    raw, fresh = sidecar.read(scene_path)
+    if raw is None:
+        return None, False
+
+    scene_dir = clean(os.path.dirname(scene_path))
+    project = clean(project or scene_dir)
+
+    found = set()
+    for entry in raw:
+        text = entry.replace("\\", "/")
+        for resolved in _expand_vars(text, scene_dir, project):
+            for candidate in _sidecar_candidates(resolved, scene_dir, project):
+                if is_sequence(candidate) or VARIABLE_RE.search(candidate):
+                    for frame in expand_glob(candidate):
+                        found.add(key(frame))
+                found.add(key(candidate))
+
+    return found, fresh
+
+
+def _sidecar_candidates(text, scene_dir, project):
+    """
+    Every absolute reading of one sidecar entry.
+
+    C4D's asset list holds absolute paths for most things but relative ones
+    for assets inside the project, and the same ambiguity as $HIP applies: a
+    relative path may hang off the scene's folder or the project root. Keep
+    both readings and let the disk decide, the way paths_in_scene() does --
+    resolving only against the scene folder misses every reference in a
+    project whose scenes live in a subfolder.
+    """
+    if not text:
+        return []
+    if os.path.isabs(text) or text.startswith("//"):
+        return [clean(text)]
+
+    stripped = text.lstrip("./")
+    candidates = [clean(os.path.join(scene_dir, stripped)),
+                  clean(os.path.join(project, stripped))]
+
+    existing = [c for c in candidates if os.path.exists(c)]
+    return existing or candidates
 
 
 def is_opaque(scene_path):

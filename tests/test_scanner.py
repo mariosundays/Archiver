@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import actions, rules, scanner
+from core import actions, rules, scanner, sidecar
 
 
 def write(path, content=b"x" * 512):
@@ -289,6 +289,128 @@ class TestOpaqueScenes(unittest.TestCase):
         self.assertFalse(result.references_trustworthy)
         folder = [f for f in result.folders if f.relative == "geo"][0]
         self.assertEqual(folder.verdict, rules.DROP)
+
+
+class TestAssetSidecars(unittest.TestCase):
+    """
+    An opaque scene stops being blind once the application writes its asset
+    list down beside it. This is the payoff for the whole sidecar mechanism:
+    a C4D project that could only ever say REVIEW starts giving real answers.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_side_").replace("\\", "/")
+        self.scene = self.root + "/scenes/shot.c4d"
+        write(self.scene, b"QC4DC4D6" + b"\xd7" * 4096)
+        write(self.root + "/cache/sim.abc", b"x" * 8192)
+        write(self.root + "/cache/old.abc", b"x" * 8192)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def export(self, assets, stale=False):
+        """Write the sidecar a C4D export would leave, fresh or stale."""
+        sidecar.write(self.scene, assets, app="Cinema 4D")
+        if stale:
+            # The scene saved again after the export.
+            written = sidecar.sidecar_path(self.scene)
+            base = os.path.getmtime(written)
+            os.utime(written, (base, base))
+            os.utime(self.scene, (base + 500, base + 500))
+
+    def test_a_fresh_sidecar_makes_the_project_readable(self):
+        self.export([self.root + "/cache/sim.abc"])
+        result = scanner.scan(self.root)
+        self.assertEqual(result.opaque_scenes, [])
+        self.assertTrue(result.references_trustworthy)
+
+    def test_a_referenced_cache_is_kept(self):
+        self.export([self.root + "/cache/sim.abc"])
+        result = scanner.scan(self.root)
+        entry = [e for f in result.folders for e in f.entries
+                 if e.name == "sim.abc"][0]
+        self.assertTrue(entry.referenced)
+        self.assertIn(self.scene, entry.used_by)
+
+    def test_the_scene_is_named_as_the_user(self):
+        # "Which scene needs this?" is the question asked before deleting a
+        # 3 GB cache, and a sidecar can answer it just as a .hip would.
+        self.export([self.root + "/cache/sim.abc"])
+        result = scanner.scan(self.root)
+        entry = [e for f in result.folders for e in f.entries
+                 if e.name == "sim.abc"][0]
+        self.assertEqual([os.path.basename(p) for p in entry.used_by],
+                         ["shot.c4d"])
+
+    def test_relative_paths_resolve_against_the_project(self):
+        # C4D writes project-internal assets relative, and the scene lives in
+        # a subfolder -- so the scene-dir reading is wrong and the project
+        # reading is right. Both are tried; the disk decides.
+        self.export(["cache\\sim.abc"])
+        result = scanner.scan(self.root)
+        entry = [e for f in result.folders for e in f.entries
+                 if e.name == "sim.abc"][0]
+        self.assertTrue(entry.referenced)
+
+    def test_a_stale_sidecar_keeps_the_scene_opaque(self):
+        # Somebody may have added a cache since the export, so a stale
+        # sidecar may not license a DROP anywhere in the project.
+        self.export([self.root + "/cache/sim.abc"], stale=True)
+        result = scanner.scan(self.root)
+        self.assertEqual(result.opaque_scenes, [self.scene])
+        self.assertFalse(result.references_trustworthy)
+        self.assertEqual(result.stale_sidecars, [self.scene])
+
+    def test_a_stale_sidecar_still_protects_what_it_names(self):
+        # Stale evidence may only push toward KEEP, never toward DROP.
+        self.export([self.root + "/cache/sim.abc"], stale=True)
+        result = scanner.scan(self.root)
+        entry = [e for f in result.folders for e in f.entries
+                 if e.name == "sim.abc"][0]
+        self.assertTrue(entry.referenced)
+
+    def test_a_cache_added_since_a_stale_export_is_never_dropped(self):
+        # THE case this whole staleness rule exists for. The sidecar names
+        # sim.abc, the scene was saved afterwards, and old.abc is not in the
+        # list -- because it was added to the scene since. Promoting it to
+        # DROP on that evidence is how the tool would delete live work.
+        self.export([self.root + "/cache/sim.abc"], stale=True)
+        result = scanner.scan(self.root)
+        entry = [e for f in result.folders for e in f.entries
+                 if e.name == "old.abc"][0]
+        self.assertFalse(entry.referenced)
+        folder = [f for f in result.folders if f.relative == "cache"][0]
+        self.assertEqual(folder.verdict, rules.REVIEW)
+        self.assertIn("could not be read", folder.reason)
+
+    def test_no_sidecar_behaves_exactly_as_before(self):
+        result = scanner.scan(self.root)
+        self.assertEqual(result.opaque_scenes, [self.scene])
+        self.assertEqual(result.stale_sidecars, [])
+
+    def test_a_corrupt_sidecar_leaves_the_scene_opaque(self):
+        # The dangerous failure would be reading it as "this scene uses
+        # nothing", which makes every cache look orphaned.
+        with open(sidecar.sidecar_path(self.scene), "w") as handle:
+            handle.write("{ truncated")
+        result = scanner.scan(self.root)
+        self.assertEqual(result.opaque_scenes, [self.scene])
+        self.assertFalse(result.references_trustworthy)
+
+    def test_an_empty_export_is_evidence_and_frees_the_project(self):
+        # A scene that genuinely loads nothing is a real answer, not a
+        # failure: the project becomes trustworthy and unused caches can be
+        # judged on their merits.
+        self.export([])
+        result = scanner.scan(self.root)
+        self.assertEqual(result.opaque_scenes, [])
+        self.assertTrue(result.references_trustworthy)
+
+    def test_the_sidecar_is_not_itself_a_reference(self):
+        self.export([self.root + "/cache/sim.abc"])
+        result = scanner.scan(self.root)
+        names = [e.name for f in result.folders for e in f.entries]
+        self.assertIn("shot.c4d.assets.json", names)
 
 
 class TestEmptyFolders(unittest.TestCase):

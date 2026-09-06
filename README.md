@@ -69,7 +69,7 @@ patterns globbed against disk, and a File Cache's procedural output folder
 recovered from its `basedir` string. Also Blender, Maya, Nuke, After Effects,
 Fusion and Substance.
 
-### Cinema 4D is a real limitation
+### Cinema 4D cannot be read from outside
 
 Modern `.c4d` files (R20+) are a proprietary compressed container. Verified on
 an R25 file: magic `QC4DC4D6`, entropy 7.19 bits/byte, and not one asset path
@@ -78,11 +78,38 @@ in plaintext.
 **Nothing can be read from them**, which means a C4D project yields no
 references at all and every cache looks unused. Archiver detects these by
 magic, says so plainly at the top of the report, and holds every
-reference-based verdict back to *review*. On such a project the verdicts rest
-on file type and location alone.
+reference-based verdict back to *review*. Without help, the verdicts on such
+a project rest on file type and location alone.
 
-A Cinema 4D-side script that exports each scene's asset list to JSON would
-close this gap. Not built yet.
+### The fix: asset sidecars
+
+Cinema 4D knows what its scenes load even though the file will not say. So it
+writes the answer down: **Extensions → Archiver Asset Export** dumps each
+scene's asset list to a JSON file beside it, and Archiver reads that instead
+of scraping.
+
+```
+shot_010.c4d
+shot_010.c4d.assets.json     <- what the scene actually loads
+```
+
+Pick a scope when you run it: this scene, every scene in its folder, or every
+scene in a project folder you choose. A batch opens and closes each scene in
+turn, so a sixty-scene job is one unattended pass.
+
+Install with `c4d_plugin/sync_to_c4d.ps1`, then restart Cinema 4D.
+
+**A sidecar older than its scene is evidence, not truth.** Somebody may have
+added a cache since the export, so a stale sidecar's paths still protect what
+they name — that direction cannot lose data — but the scene stays counted as
+unreadable, and nothing is promoted to *drop* on the strength of old evidence.
+The review screen and the report both say how many are stale.
+
+| | Scene reads | Trust |
+|---|---|---|
+| Fresh sidecar | normally | full |
+| Stale sidecar | paths still protect what they name | held back |
+| No sidecar | nothing | held back |
 
 ---
 
@@ -149,6 +176,8 @@ Archiver/
 ├── archiver.py           CLI entry point
 ├── core/                 Qt-free and DCC-free throughout
 │   ├── scene_parser.py   read scene references without the app
+│   ├── sidecar.py        the asset list a DCC writes beside a scene
+│   ├── c4d_assets.py     the c4d-free half of the C4D export
 │   ├── rules.py          categories, verdicts, heuristics
 │   ├── scanner.py        the walk and the report model
 │   ├── tree.py           rolled-up sizes for the birds-eye view
@@ -157,7 +186,8 @@ Archiver/
 │   ├── actions.py        the ONLY module that writes
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
-└── tests/                243 tests: python tests/run_all.py
+├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
+└── tests/                313 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -173,7 +203,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-243 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+313 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -181,7 +211,8 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.4.6** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
+**v0.5.0** — all six steps of the wizard, plus the Cinema 4D asset export
+that closes the `.c4d` blind spot. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with

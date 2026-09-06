@@ -240,7 +240,8 @@ class ScanResult(object):
         self.folders = []
         self.scenes = []
         self.errors = []
-        self.opaque_scenes = []     # scenes whose format we cannot read
+        self.opaque_scenes = []     # scenes whose references we lack
+        self.stale_sidecars = []    # read from a sidecar older than the scene
         self.empty_folders = []
         self.staged_bytes = 0       # sitting in _toDelete, already decided
         self.staged_files = 0
@@ -423,9 +424,10 @@ def read_references(scenes, root, progress=None):
     """
     Read every scene and collect what the project as a whole references.
 
-    Returns (paths, folders, opaque, used_by): the referenced file paths, the
-    directories some scene builds paths inside, the scenes whose format we
-    could not read at all, and a map of path -> the scenes naming it.
+    Returns (paths, folders, opaque, used_by, stale): the referenced file
+    paths, the directories some scene builds paths inside, the scenes whose
+    references we could not establish, a map of path -> the scenes naming it,
+    and the scenes read from a sidecar that has fallen behind them.
 
     That third value is the important one. A scene we cannot read contributes
     no references, so everything it uses looks unreferenced -- and acting on
@@ -440,6 +442,7 @@ def read_references(scenes, root, progress=None):
     paths = set()
     ref_folders = set()
     opaque = []
+    stale = []
     used_by = {}
     folder_used_by = {}
 
@@ -449,7 +452,23 @@ def read_references(scenes, root, progress=None):
             break
 
         if scene_parser.is_opaque(scene.path):
-            opaque.append(scene.path)
+            # Unreadable by scrape, but the application may have written its
+            # asset list down beside it. See core/sidecar.py.
+            found, fresh = scene_parser.paths_from_sidecar(scene.path, root)
+            if found is None:
+                opaque.append(scene.path)
+                continue
+
+            paths |= found
+            for path in found:
+                used_by.setdefault(path, []).append(scene.path)
+
+            # A stale sidecar's paths still protect what they name, but the
+            # scene stays opaque: somebody may have added a cache since the
+            # export, and only a fresh sidecar may license a DROP.
+            if not fresh:
+                opaque.append(scene.path)
+                stale.append(scene.path)
             continue
 
         try:
@@ -467,7 +486,7 @@ def read_references(scenes, root, progress=None):
         for folder in folders:
             folder_used_by.setdefault(folder, []).append(scene.path)
 
-    return paths, ref_folders, opaque, (used_by, folder_used_by)
+    return paths, ref_folders, opaque, (used_by, folder_used_by), stale
 
 
 def mark_referenced(folders, referenced_paths, referenced_folders,
@@ -705,8 +724,10 @@ def scan(root, progress=None, scene_progress=None):
     scenes = find_scenes(raw_folders)
     result.scenes = scenes
 
-    referenced_paths, referenced_folders, opaque, attribution =         read_references(scenes, root, scene_progress)
+    referenced_paths, referenced_folders, opaque, attribution, stale = \
+        read_references(scenes, root, scene_progress)
     result.opaque_scenes = opaque
+    result.stale_sidecars = stale
     trust = result.references_trustworthy
 
     mark_referenced(raw_folders, referenced_paths, referenced_folders,
