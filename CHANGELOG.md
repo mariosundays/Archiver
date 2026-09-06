@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.4 -- 2026-09-06
+
+### Changed
+
+- **The Why column is short now.** Every reason carries two forms: a few
+  words for the column and the full argument for the detail strip and
+  tooltip. The old single form ran to 70 characters -- "Comp / flipbooks —
+  Superseded -- a higher version of this folder exists alongside it" -- of
+  which the first half repeated the category the row already showed and the
+  rest was truncated away. Rows now read "a newer version exists",
+  "re-cookable", "orphaned — no scene reads it".
+
+- **The detail strip and the selection bar belong to the window, not to a
+  tab.** Both describe the same selection, and having them appear and vanish
+  as you switched tabs meant the reason for a row was only readable on one of
+  the two places that shows rows.
+
+### Fixed
+
+- **The Why column could not be resized.** It was set to Stretch, and Qt
+  locks a stretched section so the divider beside it will not drag. Every
+  column is Interactive with `setStretchLastSection` filling the leftover
+  width, so all of them resize.
+
 ## 0.6.3 -- 2026-09-06
 
 ### Added

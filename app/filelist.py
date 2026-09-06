@@ -84,7 +84,10 @@ class FileListPanel(QtWidgets.QWidget):
 
         header_view = self.table.header()
         header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
-        header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
+        # Interactive, not Stretch: a stretched section cannot be dragged.
+        header_view.setSectionResizeMode(
+            4, QtWidgets.QHeaderView.Interactive)
+        header_view.setStretchLastSection(True)
         self.table.setColumnWidth(0, 260)
         self.table.setColumnWidth(1, 80)
         self.table.setColumnWidth(2, 70)
@@ -169,7 +172,8 @@ class FileListPanel(QtWidgets.QWidget):
                                    "" if len(folder.signals) == 1 else "s",
                                    "\n  ".join(folder.signals)))
 
-        item.setText(4, folder.reason or "")
+        item.setText(4, getattr(folder, "reason_short", "") or folder.reason
+                     or "")
         item.setToolTip(4, folder.reason or "")
 
     def _set_users(self, item, entry):

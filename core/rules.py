@@ -116,8 +116,31 @@ CATEGORY_VERDICT = {
     CAT_OTHER: REVIEW,
 }
 
-# Why each category defaults where it does. Surfaced in the report, because a
-# verdict the user cannot interrogate is a verdict they will not trust.
+# Why each category defaults where it does.
+#
+# TWO forms, because a table column and an explanation want different things.
+# The short one is what the Why column shows: a few words, no sentence, and
+# nothing the Verdict, Confidence or Folder columns already say. The long one
+# is the full argument, and lives in the detail strip and the tooltip where
+# there is room for it.
+#
+# The old single form ran to 70 characters -- "Comp / flipbooks - Superseded
+# -- a higher version of this folder exists alongside it." -- of which the
+# first half repeated the category and the rest was truncated away.
+CATEGORY_WHY_SHORT = {
+    CAT_SCENE: "the project itself",
+    CAT_SOURCE: "cannot be remade",
+    CAT_GEO_IN: "imported, original may be gone",
+    CAT_DELIVERY: "the finished work",
+    CAT_DOC: "small, worth the context",
+    CAT_CACHE: "re-cookable",
+    CAT_RENDER: "re-renderable, costly",
+    CAT_COMP: "re-exportable from the comp",
+    CAT_BACKUP: "the scene supersedes it",
+    CAT_TEMP: "disposable",
+    CAT_OTHER: "unrecognised — look first",
+}
+
 CATEGORY_WHY = {
     CAT_SCENE: "The project itself. Never archivable.",
     CAT_SOURCE: "Cannot be regenerated -- shot, bought, or authored.",
@@ -571,12 +594,14 @@ def verdict_for(category, referenced=None, superseded=False,
     dangerous.
     """
     base = CATEGORY_VERDICT.get(category, REVIEW)
-    reason = CATEGORY_WHY.get(category, "")
+    reason = (CATEGORY_WHY.get(category, ""),
+              CATEGORY_WHY_SHORT.get(category, ""))
 
     # A superseded version is the strongest signal there is. It applies to
     # every category, including the ones that otherwise never drop.
     if superseded:
-        return DROP, "A newer version of this exists alongside it."
+        return DROP, ("A newer version of this exists alongside it.",
+                      "a newer version exists")
 
     # A cache is only safely regenerable while the scene that cooks it still
     # exists. Without it, the cache IS the asset.
@@ -594,21 +619,24 @@ def verdict_for(category, referenced=None, superseded=False,
     # cannot be read reads identically to genuine junk.
     if category == CAT_CACHE and referenced:
         return DROP, ("Regenerable -- a scene in this project reads it, so "
-                      "it can be re-cooked.")
+                      "it can be re-cooked.", "a scene here reads it")
 
     if category == CAT_CACHE and scene_missing:
         return REVIEW, ("No scene in this project references it. Whatever "
-                        "made it is gone, so it may NOT be re-cookable.")
+                        "made it is gone, so it may NOT be re-cookable.",
+                        "orphaned — no scene reads it")
 
     if category == CAT_CACHE and not trust_references:
         return REVIEW, ("UNVERIFIED -- a scene here could not be read "
                         "(Cinema 4D), so this may be driven by it. Nothing "
-                        "was checked against those scenes.")
+                        "was checked against those scenes.",
+                        "unverified — a C4D scene is unreadable")
 
     # A referenced render is one the project still actively uses, likely as a
     # comp input. Not a drop candidate.
     if category in (CAT_RENDER, CAT_COMP) and referenced:
-        return KEEP, "Referenced by a scene in this project -- still in use."
+        return KEEP, ("Referenced by a scene in this project -- still in "
+                      "use.", "a scene here uses it")
 
     return base, reason
 

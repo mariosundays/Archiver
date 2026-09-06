@@ -200,7 +200,8 @@ class FolderReport(object):
         self.entries = []
         self.sequences = []
         self.verdict = rules.REVIEW
-        self.reason = ""
+        self.reason = ""        # the full argument, for the detail strip
+        self.reason_short = ""  # a few words, for the Why column
         self.category = rules.CAT_OTHER
         self.is_empty = False
         self.superseded = False
@@ -654,6 +655,16 @@ def group_sequences(entries):
     return sequences
 
 
+def _split_reason(reason):
+    """
+    verdict_for returns (long, short) now; older call sites pass a bare
+    string. Accept both so nothing has to change in lockstep.
+    """
+    if isinstance(reason, tuple):
+        return reason[0], reason[1] if len(reason) > 1 else reason[0]
+    return reason, reason
+
+
 def _folder_verdict(folder, scene_count, superseded_folders=(),
                     trust_references=True):
     """
@@ -666,6 +677,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
     dropping it.
     """
     if not folder.entries:
+        folder.reason_short = "empty" if folder.is_empty else "structure"
         if folder.is_empty:
             return rules.DROP, "Empty folder -- nothing in it, at any depth."
         return rules.KEEP, "Holds only subfolders."
@@ -689,6 +701,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
     # now carries the reason that produced it.
     best = None
     best_reason = ""
+    best_short = ""
 
     for entry in folder.entries:
         # Only claim a cache is orphaned when we could actually read the
@@ -698,7 +711,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
                          and entry.category == rules.CAT_CACHE
                          and not entry.referenced
                          and scene_count > 0)
-        verdict, reason = rules.verdict_for(
+        verdict, raw_reason = rules.verdict_for(
             entry.category,
             referenced=entry.referenced,
             superseded=entry.superseded,
@@ -707,11 +720,13 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
         )
         if best is None \
                 or rules.VERDICT_ORDER[verdict] < rules.VERDICT_ORDER[best]:
-            best, best_reason = verdict, reason
+            best = verdict
+            best_reason, best_short = _split_reason(raw_reason)
         if best == rules.KEEP:
             break
 
     if best is None:
+        folder.reason_short = "nothing recognisable"
         return rules.REVIEW, "Nothing recognisable in it."
 
     # A newer version of the same thing sits alongside: that settles it,
@@ -733,6 +748,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
         if folder.superseded:
             best_reason = ("Superseded -- a higher version of this folder "
                            "exists alongside it.")
+            best_short = "a newer version exists"
         if signals:
             # Recorded, not appended to the reason. Writing it into the text
             # put it past where the Why column truncates, so every STRONG was
@@ -746,12 +762,15 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
     if folder.category == rules.CAT_CACHE             and rules.is_expensive_sim(folder.path):
         best_reason += "  SLOW to re-cook -- this looks like a simulation."
 
-    # Say what the folder is as well as why, so a Drop row explains itself
-    # without the user having to know the category table by heart.
+    # The category prefix is gone from the SHORT form. It used half the
+    # column restating what the row already shows, and pushed the actual
+    # reason past the truncation point. The long form keeps it, since the
+    # detail strip has room and the context helps there.
     label = rules.CATEGORY_LABEL.get(folder.category, "")
     if label and best_reason and not best_reason.startswith(label):
         best_reason = "%s — %s" % (label, best_reason)
 
+    folder.reason_short = best_short
     return best, best_reason
 
 

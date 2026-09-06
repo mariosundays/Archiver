@@ -249,6 +249,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(self._build_findings(), "2 - What can go")
         outer.addWidget(self.tabs, 1)
 
+        # The detail strip and the selection bar belong to the WINDOW, not to
+        # a tab. Both describe the same selection, and having them appear and
+        # vanish as you switch tabs meant the reason for a row was only
+        # readable on one of the two places that shows rows.
+        self.detail = DetailPanel()
+        outer.addWidget(self.detail)
+        outer.addLayout(self._build_selection_bar())
+
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.hide()
@@ -354,7 +362,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.overview_split.setStretchFactor(1, 2)
 
         layout.addWidget(self.overview_split, 1)
-        layout.addLayout(self._build_selection_bar())
         return page
 
     def _build_selection_bar(self):
@@ -479,18 +486,18 @@ class MainWindow(QtWidgets.QMainWindow):
         add_reveal_menu(self.findings, _node_path)
         header = self.findings.header()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
-        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)
+        # Interactive, not Stretch: Qt locks a stretched section so the
+        # divider beside it cannot be dragged. setStretchLastSection
+        # fills the leftover width instead, and every column stays
+        # resizable.
+        header.setSectionResizeMode(5,
+                                    QtWidgets.QHeaderView.Interactive)
+        header.setStretchLastSection(True)
         header.setSectionsClickable(True)
         self.findings.setColumnWidth(0, 300)
         self.findings.setColumnWidth(4, 90)
+        self.findings.setColumnWidth(5, 240)
         layout.addWidget(self.findings, 1)
-
-        # The "Why" column truncates on every row, and the reasons are longer
-        # than any column that would still leave room for the table. A detail
-        # area is the honest fix: the column gives the gist, this gives the
-        # whole sentence for whichever row you are on.
-        self.detail = DetailPanel()
-        layout.addWidget(self.detail)
 
         bottom = QtWidgets.QHBoxLayout()
         note = QtWidgets.QLabel(
@@ -1041,10 +1048,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tree_current(self, item, _previous):
         if item is None:
+            self.detail.clear()
             return
         node = item.data(0, Qt.UserRole)
         if node is None:
+            self.detail.clear()
             return
+
+        # The overview tree holds tree.Node; the panel wants the
+        # FolderReport hanging off it. A pure container has none.
+        self.detail.show_folder(getattr(node, "report", None),
+                                self.result.root if self.result else "")
         self.status.showMessage(
             "%s — %s in %s files%s"
             % (node.name, node.human_size,
@@ -1110,7 +1124,7 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 item.setData(4, SortableItem.SORT_KEY, 9)
 
-            item.setText(5, folder.reason)
+            item.setText(5, folder.reason_short or folder.reason)
             item.setToolTip(5, folder.reason)
             item.setText(6, folder.age)
             item.setData(6, SortableItem.SORT_KEY, -(folder.mtime or 0))

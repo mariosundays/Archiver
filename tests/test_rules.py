@@ -240,7 +240,11 @@ class TestCacheEvidence(unittest.TestCase):
     def test_proven_cache_drops_and_says_so(self):
         verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True)
         self.assertEqual(verdict, rules.DROP)
-        self.assertIn("reads it", why)
+        # (long, short): the column shows the short one, the detail strip the
+        # long one. Both must say the same thing.
+        self.assertIn("reads it", why[0])
+        self.assertIn("reads it", why[1])
+        self.assertLess(len(why[1]), len(why[0]))
 
     def test_reasons_do_not_point_at_absent_columns(self):
         # The proven-cache reason used to say "check the Used by column",
@@ -251,20 +255,23 @@ class TestCacheEvidence(unittest.TestCase):
                        {"scene_missing": True},
                        {"trust_references": False}):
             _verdict, why = rules.verdict_for(rules.CAT_CACHE, **kwargs)
-            self.assertNotIn("column", why.lower())
+            for form in why:
+                self.assertNotIn("column", form.lower())
 
     def test_orphaned_cache_reviews_and_says_the_maker_is_gone(self):
         verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=False,
                                          scene_missing=True)
         self.assertEqual(verdict, rules.REVIEW)
-        self.assertIn("may NOT be re-cookable", why)
+        self.assertIn("may NOT be re-cookable", why[0])
+        self.assertIn("orphaned", why[1])
 
     def test_unverified_cache_reviews_and_names_the_reason(self):
         verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=False,
                                          trust_references=False)
         self.assertEqual(verdict, rules.REVIEW)
-        self.assertIn("UNVERIFIED", why)
-        self.assertIn("Cinema 4D", why)
+        self.assertIn("UNVERIFIED", why[0])
+        self.assertIn("Cinema 4D", why[0])
+        self.assertIn("unverified", why[1])
 
     def test_the_three_reasons_are_distinguishable(self):
         proven = rules.verdict_for(rules.CAT_CACHE, referenced=True)[1]
@@ -272,6 +279,9 @@ class TestCacheEvidence(unittest.TestCase):
         unknown = rules.verdict_for(rules.CAT_CACHE,
                                     trust_references=False)[1]
         self.assertEqual(len({proven, orphan, unknown}), 3)
+        # Short forms must be distinguishable too, since that is what the
+        # Why column actually shows.
+        self.assertEqual(len({proven[1], orphan[1], unknown[1]}), 3)
 
     def test_a_proven_cache_drops_even_with_unreadable_scenes_around(self):
         # Evidence found stands whatever else could not be read.
