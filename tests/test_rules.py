@@ -240,7 +240,18 @@ class TestCacheEvidence(unittest.TestCase):
     def test_proven_cache_drops_and_says_so(self):
         verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True)
         self.assertEqual(verdict, rules.DROP)
-        self.assertIn("a scene here reads it", why)
+        self.assertIn("reads it", why)
+
+    def test_reasons_do_not_point_at_absent_columns(self):
+        # The proven-cache reason used to say "check the Used by column",
+        # which only exists in the file panel on tab 1 -- so on the findings
+        # tab it pointed at something that was not on screen. The detail
+        # strip names the scenes instead.
+        for kwargs in ({"referenced": True},
+                       {"scene_missing": True},
+                       {"trust_references": False}):
+            _verdict, why = rules.verdict_for(rules.CAT_CACHE, **kwargs)
+            self.assertNotIn("column", why.lower())
 
     def test_orphaned_cache_reviews_and_says_the_maker_is_gone(self):
         verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=False,

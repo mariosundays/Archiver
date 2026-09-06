@@ -583,8 +583,8 @@ def verdict_for(category, referenced=None, superseded=False,
     # tool untrustworthy on mixed projects: a 40-minute sim whose C4D scene
     # cannot be read reads identically to genuine junk.
     if category == CAT_CACHE and referenced:
-        return DROP, ("Regenerable -- a scene here reads it, so it can be "
-                      "re-cooked. Check the Used by column for which.")
+        return DROP, ("Regenerable -- a scene in this project reads it, so "
+                      "it can be re-cooked.")
 
     if category == CAT_CACHE and scene_missing:
         return REVIEW, ("No scene in this project references it. Whatever "

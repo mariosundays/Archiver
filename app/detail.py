@@ -32,7 +32,7 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from core import rules
 from core.scanner import human
 
-from .bars import CATEGORY_GLYPH, VERDICT_FILL, verdict_icon
+from .bars import VERDICT_FILL, verdict_icon
 
 # Selecting the text matters: these are paths people paste into a file dialog
 # or a shell.
@@ -81,6 +81,15 @@ class DetailPanel(QtWidgets.QFrame):
         self.why.setTextInteractionFlags(Qt_SELECTABLE)
         layout.addWidget(self.why)
 
+        # Which scenes read this. The reason line used to say "check the Used
+        # by column", but that column only exists in the file panel on tab 1 --
+        # it pointed at something that was not on the screen. Naming the
+        # scenes here answers the question where it is actually asked.
+        self.users = QtWidgets.QLabel("")
+        self.users.setWordWrap(True)
+        self.users.setTextInteractionFlags(Qt_SELECTABLE)
+        layout.addWidget(self.users)
+
         self.path = QtWidgets.QLabel("")
         self.path.setObjectName("hint")
         self.path.setWordWrap(True)
@@ -92,6 +101,8 @@ class DetailPanel(QtWidgets.QFrame):
         self.headline.setText("Select a row to see why.")
         self.facts.setText("")
         self.why.setText("")
+        self.users.setText("")
+        self.users.hide()
         self.path.setText("")
 
     def show_folder(self, folder, root=""):
@@ -103,11 +114,8 @@ class DetailPanel(QtWidgets.QFrame):
         verdict = folder.verdict
         self.badge.setPixmap(verdict_icon(verdict, 14).pixmap(14, 14))
 
-        glyph = CATEGORY_GLYPH.get(folder.category, "")
         label = rules.CATEGORY_LABEL.get(folder.category, "")
-        self.headline.setText(
-            "%s  %s   <b>%s</b>"
-            % (glyph, label, folder.name))
+        self.headline.setText("%s   <b>%s</b>" % (label, folder.name))
 
         parts = [rules.VERDICT_LABEL.get(verdict, ""), folder.human_size,
                  "%s files" % "{:,}".format(folder.count)]
@@ -121,4 +129,26 @@ class DetailPanel(QtWidgets.QFrame):
         self.why.setText(folder.reason or "")
         self.why.setStyleSheet("color: %s;" % colour.name())
 
+        self._show_users(folder)
         self.path.setText(folder.path)
+
+    def _show_users(self, folder):
+        """Name the scenes that read anything in this folder."""
+        scenes = []
+        for entry in folder.entries:
+            for scene in getattr(entry, "used_by", ()) or ():
+                name = os.path.basename(scene)
+                if name not in scenes:
+                    scenes.append(name)
+
+        if not scenes:
+            self.users.hide()
+            return
+
+        shown = "  ".join(scenes[:6])
+        if len(scenes) > 6:
+            shown += "   +%d more" % (len(scenes) - 6)
+        self.users.setText("Read by:  " + shown)
+        self.users.setStyleSheet("color: #7fb48f;")
+        self.users.setToolTip("\n".join(scenes))
+        self.users.show()

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.4 -- 2026-09-06
+
+### Changed
+
+- **Category glyphs removed.** The verdict badges stay; the per-type symbols
+  in the Folder column added noise without adding meaning -- the category is
+  already named in the detail strip.
+- **The detail strip names the scenes that read a folder.** The proven-cache
+  reason said "check the Used by column", but that column only exists in the
+  file panel on tab 1, so on the findings tab it pointed at something that was
+  not on screen. The strip now shows "Read by: <scene names>" directly, with
+  the full list on hover, and the reason no longer refers to a column at all.
+  A test asserts no reason mentions one.
+
 ## 0.4.3 -- 2026-09-06
 
 ### Added

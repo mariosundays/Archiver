@@ -108,21 +108,6 @@ def verdict_icon(verdict, size=13):
     return icon
 
 
-CATEGORY_GLYPH = {
-    rules.CAT_SCENE: "◆",       # filled diamond -- the project itself
-    rules.CAT_SOURCE: "●",      # filled circle  -- solid, irreplaceable
-    rules.CAT_GEO_IN: "▲",      # triangle       -- imported
-    rules.CAT_CACHE: "▣",       # boxed square   -- generated
-    rules.CAT_RENDER: "■",      # square         -- output
-    rules.CAT_COMP: "▥",        # hatched square
-    rules.CAT_BACKUP: "○",      # hollow circle  -- a copy
-    rules.CAT_TEMP: "◌",        # dotted circle  -- disposable
-    rules.CAT_DOC: "▬",         # bar            -- a page
-    rules.CAT_DELIVERY: "★",    # star           -- the finished work
-    rules.CAT_OTHER: "▷",
-}
-
-
 class SizeBarDelegate(QtWidgets.QStyledItemDelegate):
     """
     Draws a proportional bar in a tree column.

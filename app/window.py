@@ -37,9 +37,8 @@ from core import actions, report, rules, scanner, selection, tree
 from core.scanner import human
 
 from .backupdlg import BackupDialog
-from .bars import (CATEGORY_FILL, CATEGORY_GLYPH, Legend,
-                   SizeBarDelegate, StackedBar, VERDICT_FILL,
-                   verdict_icon)
+from .bars import (CATEGORY_FILL, Legend, SizeBarDelegate,
+                   StackedBar, VERDICT_FILL, verdict_icon)
 from .detail import DetailPanel
 from .explorer import add_reveal_menu
 from .filelist import FileListPanel
@@ -662,9 +661,6 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setText(4, rules.VERDICT_LABEL.get(verdict, ""))
             if verdict:
                 item.setIcon(4, verdict_icon(verdict))
-            glyph = CATEGORY_GLYPH.get(child.category, "")
-            if glyph:
-                item.setText(0, "%s  %s" % (glyph, child.name))
             item.setText(5, _age_of(child))
             item.setData(0, Qt.UserRole, child)
 
@@ -1024,10 +1020,6 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setIcon(3, verdict_icon(folder.verdict))
             item.setText(4, folder.reason)
             item.setToolTip(4, folder.reason)
-            glyph = CATEGORY_GLYPH.get(folder.category, "")
-            if glyph:
-                item.setText(0, "%s  %s"
-                             % (glyph, _short_path(folder.relative)))
             item.setText(5, folder.age)
             item.setForeground(3, QtGui.QBrush(
                 VERDICT_FILL[folder.verdict].lighter(160)))
