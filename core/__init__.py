@@ -1,3 +1,3 @@
 """Archiver core -- scanning and classification. Qt-free, DCC-free."""
 
-VERSION = "0.4.4"
+VERSION = "0.4.5"

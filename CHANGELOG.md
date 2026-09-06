@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.5 -- 2026-09-06
+
+### Fixed
+
+- **`_toDelete` was being scanned like any other folder.** It holds decisions
+  already made, so re-scanning it re-judged settled choices, inflated every
+  total, and put the staging folder in the report -- on a real project it
+  appeared as a 2.8 GB row marked *Keep*, which is exactly backwards for
+  files chosen for removal.
+
+  The walk now skips it and measures it instead. The scan reports
+  `staged_bytes` and `staged_files` separately, and the window says "2.8 GB in
+  10 files is staged in _toDelete, waiting for you to delete or restore it.
+  It is not counted above."
+
+  On the test project the reported size fell from 16.9 GB to 14.1 GB, which
+  is the live project rather than the project plus its own discard pile.
+
+- The manifest is excluded from the staged count -- it is Archiver's own
+  bookkeeping, not the user's data.
+
 ## 0.4.4 -- 2026-09-06
 
 ### Changed

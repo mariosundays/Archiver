@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core import rules, scanner
+from core import actions, rules, scanner
 
 
 def write(path, content=b"x" * 512):
@@ -474,3 +474,51 @@ class TestEveryVerdictExplainsItself(unittest.TestCase):
         empty = [f for f in self.result.folders if f.is_empty]
         self.assertTrue(empty)
         self.assertIn("Empty folder", empty[0].reason)
+
+
+class TestStagingIsNotScanned(unittest.TestCase):
+    """
+    _toDelete holds decisions already made.
+
+    Scanning it re-judges settled choices, inflates every total, and puts the
+    staging folder itself in the report -- on a real project it showed up as a
+    2.8 GB row marked Keep, which is nonsense: those files were chosen for
+    removal.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_stg_").replace("\\", "/")
+        fake_hip(self.root + "/scenes/shot.hip", ["$HIP/tex/a.exr"])
+        write(self.root + "/tex/a.exr", b"k" * 4096)
+        write(self.root + "/tmp/junk.tmp", b"j" * 2048)
+        actions.stage(self.root, [self.root + "/tmp"], dry_run=False)
+        self.result = scanner.scan(self.root)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_no_staging_rows_in_the_report(self):
+        for folder in self.result.folders:
+            self.assertNotIn(actions.STAGING.lower(),
+                             folder.relative.lower(),
+                             "%s came back in the report" % folder.relative)
+
+    def test_staged_files_are_not_in_the_totals(self):
+        for folder in self.result.folders:
+            for entry in folder.entries:
+                self.assertNotIn(actions.STAGING.lower(),
+                                 entry.path.lower())
+
+    def test_staged_size_is_reported_separately(self):
+        self.assertEqual(self.result.staged_files, 1)
+        self.assertEqual(self.result.staged_bytes, 2048)
+
+    def test_a_project_with_no_staging_reports_zero(self):
+        clean_root = tempfile.mkdtemp(prefix="archiver_ns_").replace("\\", "/")
+        try:
+            write(clean_root + "/tex/a.exr")
+            result = scanner.scan(clean_root)
+            self.assertEqual(result.staged_bytes, 0)
+            self.assertEqual(result.staged_files, 0)
+        finally:
+            shutil.rmtree(clean_root, ignore_errors=True)

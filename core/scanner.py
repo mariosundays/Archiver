@@ -39,7 +39,7 @@ import os
 import time
 from collections import defaultdict
 
-from . import rules, scene_parser
+from . import actions, rules, scene_parser
 from .scene_parser import clean, file_ext, key
 
 # Never walked into. Version control, OS clutter, and our own output.
@@ -242,6 +242,8 @@ class ScanResult(object):
         self.errors = []
         self.opaque_scenes = []     # scenes whose format we cannot read
         self.empty_folders = []
+        self.staged_bytes = 0       # sitting in _toDelete, already decided
+        self.staged_files = 0
         self.duration = 0.0
 
     @property
@@ -313,7 +315,7 @@ class ScanResult(object):
              if folder.verdict == verdict for entry in folder.entries])
 
 
-def walk(root, progress=None):
+def walk(root, progress=None, staging=None):
     """
     Every file under root, as FileEntry, grouped by containing folder.
 
@@ -333,9 +335,11 @@ def walk(root, progress=None):
     Returns (folders, errors), mapping a directory path to its FileEntry list.
     """
     root = clean(root)
+    staging_key = key(staging) if staging else None
     folders = defaultdict(list)
     errors = []
     seen = 0
+    staged = [0, 0]         # bytes, files
 
     # An explicit stack, not recursion. Project trees are usually shallow, but
     # a runaway junction or a deeply nested cache would blow Python's frame
@@ -343,6 +347,27 @@ def walk(root, progress=None):
     stack = [root]
     while stack:
         directory = stack.pop()
+
+        # _toDelete holds what the user already decided against. Re-scanning
+        # it means re-judging settled decisions, inflating every total, and
+        # showing the staging folder itself as a candidate -- on a real
+        # project it appeared as a 2.8 GB row marked Keep. Measure it so the
+        # UI can say what is waiting, and walk no further.
+        if staging_key and key(directory) == staging_key:
+            for folder, _dirs, names in os.walk(directory):
+                for name in names:
+                    # The manifest is Archiver's own bookkeeping, not the
+                    # user's data. Counting it makes "2.8 GB in 12 files"
+                    # out of 11 staged files plus our own record.
+                    if name == actions.MANIFEST:
+                        continue
+                    try:
+                        staged[0] += os.path.getsize(
+                            os.path.join(folder, name))
+                        staged[1] += 1
+                    except OSError:
+                        pass
+            continue
         # Every directory gets an entry, even an empty one. defaultdict would
         # silently omit them, and an empty folder is a thing worth reporting
         # -- a project full of them is a project someone half-cleaned.
@@ -374,7 +399,7 @@ def walk(root, progress=None):
         if progress is not None and not progress(seen, clean(directory)):
             break
 
-    return folders, errors
+    return folders, errors, staged
 
 
 def find_scenes(folders):
@@ -666,8 +691,11 @@ def scan(root, progress=None, scene_progress=None):
         result.errors.append("Not a folder: %s" % root)
         return result
 
-    raw_folders, errors = walk(root, progress)
+    staging = actions.staging_dir(root)
+
+    raw_folders, errors, staged = walk(root, progress, staging)
     result.errors.extend(errors)
+    result.staged_bytes, result.staged_files = staged
 
     scenes = find_scenes(raw_folders)
     result.scenes = scenes

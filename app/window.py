@@ -601,6 +601,12 @@ class MainWindow(QtWidgets.QMainWindow):
                "   ".join(parts), human(result.reclaimable())))
 
         notes = []
+        if result.staged_files:
+            notes.append(
+                "%s in %d file%s is staged in %s, waiting for you to delete "
+                "or restore it. It is not counted above."
+                % (human(result.staged_bytes), result.staged_files,
+                   "" if result.staged_files == 1 else "s", actions.STAGING))
         if result.opaque_scenes:
             notes.append(
                 "%d scene%s could not be read (Cinema 4D R20+ files are "
