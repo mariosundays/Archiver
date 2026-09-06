@@ -580,6 +580,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.prune_button.setText(
             "Delete %d empty folders" % len(result.empty_folders)
             if result.empty_folders else "No empty folders")
+        self._save_report()
         self.status.showMessage(
             "Scanned %s files in %.1fs — nothing was modified."
             % ("{:,}".format(result.total_files), result.duration))
@@ -1038,6 +1039,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_finding_states()
 
     # -- export -------------------------------------------------------------
+
+    def _save_report(self):
+        """
+        Drop the scan report at the project root after every scan.
+
+        The scan itself stays read-only; this is a separate, deliberate step,
+        which is what keeps "scanning costs you nothing" true. A failure is
+        reported in the status bar and never interrupts -- a report that could
+        not be written is worth knowing about and not worth a dialog.
+        """
+        if not self.result:
+            return
+        _path, error = actions.write_report(
+            self.result.root, report.as_dict(self.result), dry_run=False)
+        if error:
+            self.status.showMessage("Could not save the report: %s" % error)
 
     def _export(self):
         if not self.result:

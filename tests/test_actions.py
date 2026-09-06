@@ -3,6 +3,7 @@ The writing paths. This is the only part of the tool that destroys anything,
 so these tests carry more weight than the rest of the suite.
 """
 
+import json
 import os
 import shutil
 import sys
@@ -137,6 +138,81 @@ class TestSafety(PruneCase):
         remaining = [n for n in ("a", "b", "c", "d")
                      if os.path.isdir(self.root + "/" + n)]
         self.assertEqual(len(remaining), 3, "cancel did not stop the prune")
+
+
+class TestScanReport(unittest.TestCase):
+    """
+    The report is written at the project root after a scan -- but by an
+    explicit call, never by the scan itself. That separation is what keeps
+    "scanning costs you nothing" true and testable.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_rep_").replace("\\", "/")
+        write(self.root + "/tex/a.exr", b"k" * 1024)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_scanning_alone_writes_nothing(self):
+        scanner.scan(self.root)
+        self.assertFalse(os.path.exists(actions.report_path(self.root)),
+                         "the scan wrote a report by itself")
+
+    def test_dry_run_writes_nothing(self):
+        actions.write_report(self.root, {"a": 1})
+        self.assertFalse(os.path.exists(actions.report_path(self.root)))
+
+    def test_writes_at_the_project_root(self):
+        path, error = actions.write_report(self.root, {"a": 1},
+                                           dry_run=False)
+        self.assertIsNone(error)
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(os.path.dirname(path), self.root)
+        self.assertTrue(os.path.basename(path).startswith("."))
+
+    def test_content_round_trips(self):
+        data = {"root": self.root, "folders": [{"path": "tex"}]}
+        actions.write_report(self.root, data, dry_run=False)
+        with open(actions.report_path(self.root), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), data)
+
+    def test_rewriting_replaces_cleanly(self):
+        actions.write_report(self.root, {"n": 1}, dry_run=False)
+        actions.write_report(self.root, {"n": 2}, dry_run=False)
+        with open(actions.report_path(self.root), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["n"], 2)
+        # No temporary left behind.
+        self.assertFalse(os.path.exists(
+            actions.report_path(self.root) + ".tmp"))
+
+    def test_a_missing_project_is_reported_not_raised(self):
+        _path, error = actions.write_report(self.root + "/gone", {"a": 1},
+                                            dry_run=False)
+        self.assertIsNotNone(error)
+
+    def test_unserialisable_data_leaves_no_wreckage(self):
+        actions.write_report(self.root, {"n": 1}, dry_run=False)
+        _path, error = actions.write_report(self.root, {"bad": object()},
+                                            dry_run=False)
+        self.assertIsNotNone(error)
+        # The good report survives, and no .tmp is orphaned.
+        with open(actions.report_path(self.root), encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["n"], 1)
+        self.assertFalse(os.path.exists(
+            actions.report_path(self.root) + ".tmp"))
+
+    def test_the_report_is_not_scanned_as_project_content(self):
+        actions.write_report(self.root, {"a": 1}, dry_run=False)
+        result = scanner.scan(self.root)
+        for folder in result.folders:
+            for entry in folder.entries:
+                self.assertNotIn(actions.REPORT, entry.path)
+
+    def test_the_report_does_not_grow_the_file_count(self):
+        before = scanner.scan(self.root).total_files
+        actions.write_report(self.root, {"a": 1}, dry_run=False)
+        self.assertEqual(scanner.scan(self.root).total_files, before)
 
 
 if __name__ == "__main__":

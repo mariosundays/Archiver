@@ -383,6 +383,11 @@ def walk(root, progress=None, staging=None):
                             continue
                         if not entry.is_file(follow_symlinks=False):
                             continue
+                        # Our own report lives at the project root. Counting
+                        # it would make the scan report on itself, and grow
+                        # the file count by one every run.
+                        if entry.name == actions.REPORT:
+                            continue
                         stat = entry.stat(follow_symlinks=False)
                     except (OSError, IOError) as exc:
                         errors.append("%s: %s" % (entry.path, exc))

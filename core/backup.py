@@ -41,6 +41,10 @@ SKIP_NAMES = {
     "thumbs.db", "desktop.ini", ".ds_store", "._.ds_store",
 }
 
+# The scan report is deliberately NOT skipped: it is the record of what the
+# project held and why things were removed, which is exactly what someone
+# opening the archive in two years wants to find.
+
 SKIP_DIRS = {
     ".git", ".svn", ".hg", "__pycache__", "$recycle.bin",
     "system volume information", ".dropbox.cache",

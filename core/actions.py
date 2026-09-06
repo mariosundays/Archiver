@@ -41,6 +41,12 @@ STAGING = "_toDelete"
 # worth making about someone's project.
 MANIFEST = "archiver_manifest.json"
 
+# The scan report, dropped at the project root after every scan.
+#
+# Leading dot so it stays out of the way: hidden on macOS and Linux,
+# de-emphasised on Windows, and unmistakably not a project asset.
+REPORT = ".archiver_report.json"
+
 
 def prune_empty_folders(result, dry_run=True, progress=None):
     """
@@ -322,3 +328,52 @@ def staged_size(root):
             except OSError:
                 pass
     return total
+
+
+# ---------------------------------------------------------------------------
+# The scan report
+#
+# The scan itself stays read-only -- a test asserts the tree is byte-identical
+# afterwards -- so writing the report is a SEPARATE, explicit step. That
+# distinction is worth the extra call: it keeps "scanning costs you nothing"
+# true, and puts the one write where every other write in this module lives.
+# ---------------------------------------------------------------------------
+
+def report_path(root):
+    return clean(root) + "/" + REPORT
+
+
+def write_report(root, data, dry_run=True):
+    """
+    Save a scan report at the project root.
+
+    Written to a temporary file and moved into place, so an interrupted write
+    cannot leave a half-written report where a good one used to be. A failure
+    is returned rather than raised: a report that could not be saved is worth
+    mentioning and never worth aborting a scan over.
+
+    Returns (path, error). error is None on success.
+    """
+    target = report_path(root)
+    if dry_run:
+        return target, None
+
+    if not os.path.isdir(clean(root)):
+        return target, "the project folder is gone"
+
+    temporary = target + ".tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+        # os.replace is atomic on the same filesystem, so a reader either
+        # sees the old report or the new one, never a truncated file.
+        os.replace(temporary, target)
+    except (OSError, IOError, TypeError, ValueError) as exc:
+        try:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        except OSError:
+            pass
+        return target, str(exc)
+
+    return target, None

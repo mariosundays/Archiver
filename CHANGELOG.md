@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.6 -- 2026-09-06
+
+### Added
+
+- **Every scan drops `.archiver_report.json` at the project root.** A record
+  of what the project held and why each folder was judged as it was, living
+  with the project rather than only in a window that gets closed. Leading dot
+  so it stays out of the way; hidden on macOS and Linux.
+
+  It is written by an explicit call AFTER the scan, never by the scan itself,
+  so "scanning costs you nothing" stays true and stays testable -- a test
+  asserts a scan alone writes no report.
+
+  Written to a temporary file and moved into place, so an interrupted write
+  cannot replace a good report with a truncated one. A failure is reported in
+  the status bar and never interrupts.
+
+- The report **travels with an archive** rather than being skipped as junk:
+  it is exactly what someone opening the archive in two years wants to find.
+
+### Notes
+
+- The report is excluded from the scan itself, so it does not report on
+  itself or grow the file count by one every run.
+- 243 tests.
+
 ## 0.4.5 -- 2026-09-06
 
 ### Fixed
