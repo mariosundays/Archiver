@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.3 -- 2026-09-06
+
+### Added
+
+- **A detail strip under the findings table.** The "Why" column truncated
+  every row, and the reasons are whole sentences -- no column wide enough to
+  hold one leaves room for the table. The column now gives the gist and the
+  strip gives the complete answer for whichever row has focus: what it is,
+  the verdict, size, age, how many files are referenced, the full reason, and
+  the full path. Text is selectable, because these are paths people paste
+  into a shell.
+
+  A fixed strip rather than a hover popup on purpose: a verdict you have to
+  hover to read is a verdict that gets acted on unread.
+
+- **Icons.** A round badge per verdict, marked so the three are told apart
+  without relying on colour -- a tick for keep, a question for review, a
+  cross for drop -- and a glyph per category in the Folder column. Both are
+  painted rather than shipped as image files: they need no assets, scale with
+  the font, and cannot go missing from a build.
+
 ## 0.4.2 -- 2026-09-06
 
 ### Changed

@@ -62,6 +62,67 @@ TRACK = QtGui.QColor("#2a2a2a")
 TRACK_EDGE = QtGui.QColor("#333333")
 
 
+# Verdict glyphs. Drawn rather than shipped as files: three coloured shapes
+# need no assets, scale with the font, and cannot go missing from a build.
+_VERDICT_ICONS = {}
+
+
+def verdict_icon(verdict, size=13):
+    """A small round badge for a verdict. Cached, since every row asks."""
+    cache_key = (verdict, size)
+    if cache_key in _VERDICT_ICONS:
+        return _VERDICT_ICONS[cache_key]
+
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QtGui.QPainter(pixmap)
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    colour = VERDICT_FILL.get(verdict, VERDICT_FILL[None])
+    painter.setBrush(colour)
+    painter.setPen(QtGui.QPen(colour.lighter(150), 1))
+    painter.drawEllipse(1, 1, size - 2, size - 2)
+
+    # A mark inside, so the three are told apart without relying on colour:
+    # keep is a tick, review a question, drop a cross.
+    painter.setPen(QtGui.QPen(QtGui.QColor("#12181d"), 1.6))
+    inset = size * 0.30
+    if verdict == rules.KEEP:
+        painter.drawLine(QtCore.QPointF(inset, size * 0.52),
+                         QtCore.QPointF(size * 0.44, size - inset))
+        painter.drawLine(QtCore.QPointF(size * 0.44, size - inset),
+                         QtCore.QPointF(size - inset, inset))
+    elif verdict == rules.DROP:
+        painter.drawLine(QtCore.QPointF(inset, inset),
+                         QtCore.QPointF(size - inset, size - inset))
+        painter.drawLine(QtCore.QPointF(size - inset, inset),
+                         QtCore.QPointF(inset, size - inset))
+    else:
+        painter.drawLine(QtCore.QPointF(size * 0.5, size * 0.34),
+                         QtCore.QPointF(size * 0.5, size * 0.60))
+        painter.drawPoint(QtCore.QPointF(size * 0.5, size * 0.76))
+    painter.end()
+
+    icon = QtGui.QIcon(pixmap)
+    _VERDICT_ICONS[cache_key] = icon
+    return icon
+
+
+CATEGORY_GLYPH = {
+    rules.CAT_SCENE: "◆",       # filled diamond -- the project itself
+    rules.CAT_SOURCE: "●",      # filled circle  -- solid, irreplaceable
+    rules.CAT_GEO_IN: "▲",      # triangle       -- imported
+    rules.CAT_CACHE: "▣",       # boxed square   -- generated
+    rules.CAT_RENDER: "■",      # square         -- output
+    rules.CAT_COMP: "▥",        # hatched square
+    rules.CAT_BACKUP: "○",      # hollow circle  -- a copy
+    rules.CAT_TEMP: "◌",        # dotted circle  -- disposable
+    rules.CAT_DOC: "▬",         # bar            -- a page
+    rules.CAT_DELIVERY: "★",    # star           -- the finished work
+    rules.CAT_OTHER: "▷",
+}
+
+
 class SizeBarDelegate(QtWidgets.QStyledItemDelegate):
     """
     Draws a proportional bar in a tree column.

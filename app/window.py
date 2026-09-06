@@ -37,8 +37,10 @@ from core import actions, report, rules, scanner, selection, tree
 from core.scanner import human
 
 from .backupdlg import BackupDialog
-from .bars import (CATEGORY_FILL, Legend, SizeBarDelegate,
-                   StackedBar, VERDICT_FILL)
+from .bars import (CATEGORY_FILL, CATEGORY_GLYPH, Legend,
+                   SizeBarDelegate, StackedBar, VERDICT_FILL,
+                   verdict_icon)
+from .detail import DetailPanel
 from .explorer import add_reveal_menu
 from .filelist import FileListPanel
 from .review import ReviewDialog
@@ -437,12 +439,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.findings.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers)
         self.findings.itemChanged.connect(self._on_finding_checked)
+        self.findings.currentItemChanged.connect(self._on_finding_current)
         add_reveal_menu(self.findings, _node_path)
         header = self.findings.header()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
         self.findings.setColumnWidth(0, 340)
         layout.addWidget(self.findings, 1)
+
+        # The "Why" column truncates on every row, and the reasons are longer
+        # than any column that would still leave room for the table. A detail
+        # area is the honest fix: the column gives the gist, this gives the
+        # whole sentence for whichever row you are on.
+        self.detail = DetailPanel()
+        layout.addWidget(self.detail)
 
         bottom = QtWidgets.QHBoxLayout()
         note = QtWidgets.QLabel(
@@ -650,6 +660,11 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setText(3, "{:,}".format(child.total_files))
             verdict = child.verdict
             item.setText(4, rules.VERDICT_LABEL.get(verdict, ""))
+            if verdict:
+                item.setIcon(4, verdict_icon(verdict))
+            glyph = CATEGORY_GLYPH.get(child.category, "")
+            if glyph:
+                item.setText(0, "%s  %s" % (glyph, child.name))
             item.setText(5, _age_of(child))
             item.setData(0, Qt.UserRole, child)
 
@@ -762,6 +777,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_check_states()
         self._sync_finding_states()
         self._update_selection_label()
+
+    def _on_finding_current(self, item, _previous):
+        if item is None:
+            self.detail.clear()
+            return
+        folder = item.data(0, Qt.UserRole)
+        self.detail.show_folder(folder,
+                                self.result.root if self.result else "")
 
     def _node_for_path(self, path):
         if not path or self.tree_root is None:
@@ -998,7 +1021,13 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setText(1, folder.human_size)
             item.setText(2, "{:,}".format(folder.count))
             item.setText(3, rules.VERDICT_LABEL[folder.verdict])
+            item.setIcon(3, verdict_icon(folder.verdict))
             item.setText(4, folder.reason)
+            item.setToolTip(4, folder.reason)
+            glyph = CATEGORY_GLYPH.get(folder.category, "")
+            if glyph:
+                item.setText(0, "%s  %s"
+                             % (glyph, _short_path(folder.relative)))
             item.setText(5, folder.age)
             item.setForeground(3, QtGui.QBrush(
                 VERDICT_FILL[folder.verdict].lighter(160)))
