@@ -167,6 +167,35 @@ GEO_EXTS = {".abc", ".obj", ".fbx", ".ply", ".stl", ".usd", ".usda",
 # original is gone it cannot be re-exported from anything.
 CACHEABLE_GEO_EXTS = {".abc", ".usd", ".usda", ".usdc", ".usdz"}
 
+# Folder names for simulations that are slow to re-cook. "Regenerable" is
+# true of these and still beside the point: re-running a FLIP or pyro sim is
+# an afternoon, not a button press, so the report should say so rather than
+# imply the cache is free to lose.
+EXPENSIVE_SIM_WORDS = {
+    "flip", "pyro", "smoke", "fire", "vellum", "cloth", "rbd", "crowd",
+    "whitewater", "spray", "foam", "bubbles", "particles", "sim", "sims",
+    "simulation",
+}
+
+
+def is_expensive_sim(path):
+    """
+    True when a path sits under a folder named for a slow simulation.
+
+    Matches ANY word in a segment, not just the whole name, because real
+    folders are called "pyro_sim", "RBD_SIM" and
+    "AMA_DESIGN_AD_Swipe_v002.RBD_SIM". The compound-tail rule used for
+    categories is deliberately strict to avoid false categories; here a false
+    positive only adds a warning, so the looser match is the right trade.
+    """
+    for segment in clean(path).lower().split("/"):
+        segment = _ORDER_PREFIX.sub("", segment)
+        for word in re.split(r"[^a-z0-9]+", segment):
+            if word in EXPENSIVE_SIM_WORDS:
+                return True
+    return False
+
+
 # Sidecars that travel with an imported model. Losing one silently strips a
 # model of its materials, so they follow their owner rather than a folder.
 MODEL_SIDECAR_EXTS = {".mtl"}
@@ -206,7 +235,8 @@ FOLDER_CATEGORIES = {
     CAT_CACHE: {
         "cache", "caches", "geo", "geometry", "sim", "sims", "simulation",
         "flip", "pyro", "vellum", "rbd", "particles", "alembic_cache",
-        "ass", "ifd", "rs_proxy", "proxies_geo",
+        "ass", "ifd", "rs_proxy", "proxies_geo", "whitewater", "spray",
+        "foam", "bubbles", "smoke", "fire", "cloth", "crowd",
         # A folder named for an interchange format holds exports, not source:
         # "alembic/" is where caches were written to, "models/" is where
         # bought geometry lives.
@@ -540,20 +570,30 @@ def verdict_for(category, referenced=None, superseded=False,
 
     # A cache is only safely regenerable while the scene that cooks it still
     # exists. Without it, the cache IS the asset.
-    if category == CAT_CACHE and scene_missing:
-        return REVIEW, ("Regenerable in principle, but no scene here "
-                        "references it -- re-cooking may not be possible.")
-
-    # With a scene we could not read, "regenerable" is an assumption rather
-    # than a finding: the cache may be driven by that scene, and we would
-    # never see the link. Cinema 4D projects hit this every time.
+    # A cache splits three ways, and the difference is the whole decision.
     #
-    # Only applies to a cache nothing was found to reference. One we DID find
-    # a reference for is confirmed live, and that evidence stands whatever
-    # else in the project was unreadable.
-    if category == CAT_CACHE and not trust_references and not referenced:
-        return REVIEW, ("Probably regenerable, but a scene in this project "
-                        "could not be read -- verify before dropping.")
+    #   PROVEN     a readable scene names it. You know what re-cooks it, and
+    #              you know what breaks if it goes.
+    #   ORPHANED   every scene was readable and none of them named it. The
+    #              thing that made it is gone, so "regenerable" may be false.
+    #   UNKNOWN    a scene could not be read, so nothing was checked against
+    #              it. On a Cinema 4D project that is every scene.
+    #
+    # Collapsing the last two into one "unreferenced" verdict is what makes a
+    # tool untrustworthy on mixed projects: a 40-minute sim whose C4D scene
+    # cannot be read reads identically to genuine junk.
+    if category == CAT_CACHE and referenced:
+        return DROP, ("Regenerable -- a scene here reads it, so it can be "
+                      "re-cooked. Check the Used by column for which.")
+
+    if category == CAT_CACHE and scene_missing:
+        return REVIEW, ("No scene in this project references it. Whatever "
+                        "made it is gone, so it may NOT be re-cookable.")
+
+    if category == CAT_CACHE and not trust_references:
+        return REVIEW, ("UNVERIFIED -- a scene here could not be read "
+                        "(Cinema 4D), so this may be driven by it. Nothing "
+                        "was checked against those scenes.")
 
     # A referenced render is one the project still actively uses, likely as a
     # comp input. Not a drop candidate.

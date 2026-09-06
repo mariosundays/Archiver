@@ -224,3 +224,62 @@ class TestVerdicts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCacheEvidence(unittest.TestCase):
+    """
+    A cache splits three ways and the difference is the whole decision:
+    proven by a readable scene, orphaned with every scene readable, or
+    unverified because a scene could not be read at all.
+
+    Collapsing the last two is what makes a tool untrustworthy on a mixed
+    Houdini/C4D project: a 40-minute sim whose C4D scene cannot be read would
+    otherwise read exactly like genuine junk.
+    """
+
+    def test_proven_cache_drops_and_says_so(self):
+        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True)
+        self.assertEqual(verdict, rules.DROP)
+        self.assertIn("a scene here reads it", why)
+
+    def test_orphaned_cache_reviews_and_says_the_maker_is_gone(self):
+        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=False,
+                                         scene_missing=True)
+        self.assertEqual(verdict, rules.REVIEW)
+        self.assertIn("may NOT be re-cookable", why)
+
+    def test_unverified_cache_reviews_and_names_the_reason(self):
+        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=False,
+                                         trust_references=False)
+        self.assertEqual(verdict, rules.REVIEW)
+        self.assertIn("UNVERIFIED", why)
+        self.assertIn("Cinema 4D", why)
+
+    def test_the_three_reasons_are_distinguishable(self):
+        proven = rules.verdict_for(rules.CAT_CACHE, referenced=True)[1]
+        orphan = rules.verdict_for(rules.CAT_CACHE, scene_missing=True)[1]
+        unknown = rules.verdict_for(rules.CAT_CACHE,
+                                    trust_references=False)[1]
+        self.assertEqual(len({proven, orphan, unknown}), 3)
+
+    def test_a_proven_cache_drops_even_with_unreadable_scenes_around(self):
+        # Evidence found stands whatever else could not be read.
+        verdict, _why = rules.verdict_for(rules.CAT_CACHE, referenced=True,
+                                          trust_references=False)
+        self.assertEqual(verdict, rules.DROP)
+
+
+class TestExpensiveSim(unittest.TestCase):
+    """Regenerable is not the same as cheap."""
+
+    def test_sim_folders_are_flagged(self):
+        for path in ("D:/p/cache/flip/x.bgeo",
+                     "D:/p/pyro_sim/smoke.vdb",
+                     "D:/p/SHOT_v002.RBD_SIM/v1/x.bgeo.sc",
+                     "D:/p/vellum/cloth.sim"):
+            self.assertTrue(rules.is_expensive_sim(path), path)
+
+    def test_ordinary_caches_are_not(self):
+        for path in ("D:/p/geo/x.bgeo", "D:/p/tex/wood.exr",
+                     "D:/p/simple_things/x.bgeo", "D:/p/abc/model.abc"):
+            self.assertFalse(rules.is_expensive_sim(path), path)

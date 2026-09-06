@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.4.2 -- 2026-09-06
+
+### Changed
+
+- **A cache now says WHICH of three things it is**, because on a mixed
+  Houdini/Cinema 4D project the difference is the whole decision:
+
+  - *Proven* -- a readable scene names it, so it can be re-cooked and the
+    Used by column says by what. Drops.
+  - *Orphaned* -- every scene was readable and none named it. Whatever made
+    it is gone, so "regenerable" may be false. Reviews.
+  - *Unverified* -- a scene could not be read, so nothing was checked against
+    it. On a C4D project that is every scene. Reviews, and says so.
+
+  Previously the last two collapsed into one "unreferenced" verdict, which is
+  what makes a tool untrustworthy on a mixed project: a 40-minute sim whose
+  C4D scene cannot be read read exactly like genuine junk.
+
+- **Slow simulations are flagged as slow.** A FLIP, pyro, vellum, RBD or
+  crowd cache is regenerable and that is beside the point -- re-running one is
+  an afternoon. Those rows now carry "SLOW to re-cook", so Drop never reads as
+  "free to lose". Matched on any word in a folder name, so `pyro_sim` and
+  `SHOT_v002.RBD_SIM` both catch.
+
+- More simulation folder names recognised: whitewater, spray, foam, bubbles,
+  smoke, fire, cloth, crowd.
+
+### Notes
+
+- 229 tests. Verified on a real mixed project (25 readable .hip, 38 unreadable
+  .c4d): all three caches proven by a Houdini file, and the two `_SIM` folders
+  carrying the slow warning.
+- The Cinema 4D asset bridge remains the real fix for the unverified case.
+
 ## 0.4.1 -- 2026-09-06
 
 ### Fixed

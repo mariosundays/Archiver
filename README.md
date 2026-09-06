@@ -39,8 +39,15 @@ whose scene has been deleted share a category but get different verdicts.
   is usually the largest reclaimable thing in a project. It applies only to
   renders, comps and caches — never to source or scenes, where `v01` may hold
   something `v03` does not.
-- **A cache is only droppable while its scene exists.** Nothing referencing it
-  means re-cooking may be impossible, so it becomes *review*, not *drop*.
+- **A cache says which of three things it is.** *Proven* — a readable scene
+  names it, so it re-cooks and the Used by column says from what. *Orphaned* —
+  every scene was readable and none named it, so whatever made it is gone.
+  *Unverified* — a scene could not be read, so nothing was checked. Only the
+  first drops. On a mixed Houdini/C4D project that distinction is the whole
+  decision.
+- **Slow sims are flagged as slow.** A FLIP or pyro cache is regenerable and
+  that is beside the point; those rows say "SLOW to re-cook" so Drop never
+  reads as free to lose.
 - **The folder decides ambiguous media.** An `.exr` means nothing on its own;
   `render/`, `tex/` and `plates/` are the whole signal. Unambiguous extensions
   win over their folder — unless that folder is `backup/` or `tmp/`.
@@ -150,7 +157,7 @@ Archiver/
 │   ├── actions.py        the ONLY module that writes
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
-└── tests/                222 tests: python tests/run_all.py
+└── tests/                229 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -166,7 +173,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-222 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+229 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -174,7 +181,7 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.4.1** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
+**v0.4.2** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with

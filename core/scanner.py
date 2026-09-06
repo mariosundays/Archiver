@@ -635,6 +635,12 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
     if best is None:
         return rules.REVIEW, "Nothing recognisable in it."
 
+    # A slow sim is regenerable and that is beside the point: re-running a
+    # FLIP or pyro cache is an afternoon. Say so, so "Drop" never reads as
+    # "free to lose".
+    if folder.category == rules.CAT_CACHE             and rules.is_expensive_sim(folder.path):
+        best_reason += "  SLOW to re-cook -- this looks like a simulation."
+
     # Say what the folder is as well as why, so a Drop row explains itself
     # without the user having to know the category table by heart.
     label = rules.CATEGORY_LABEL.get(folder.category, "")
