@@ -30,9 +30,17 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
+from core import rules
 from core.scanner import age_label, human
 
+from .bars import VERDICT_FILL, verdict_icon
 from .explorer import add_reveal_menu
+
+_CONFIDENCE_COLOUR = {
+    rules.STRONG: QtGui.QColor("#7fb48f"),
+    rules.MODERATE: QtGui.QColor("#c2a34a"),
+    rules.WEAK: QtGui.QColor("#9aa0a6"),
+}
 
 
 class FileListPanel(QtWidgets.QWidget):
@@ -63,8 +71,12 @@ class FileListPanel(QtWidgets.QWidget):
         layout.addLayout(header)
 
         self.table = QtWidgets.QTreeWidget()
+        # The same columns the findings tab shows, because this answers the
+        # same question. A bar segment and the findings table describing the
+        # same folders differently is how a tool stops being trusted.
         self.table.setHeaderLabels(
-            ["File", "Size", "Used by", "Folder", "Age"])
+            ["File", "Size", "Verdict", "Confidence", "Why", "Used by",
+             "Folder", "Age"])
         self.table.setAlternatingRowColors(True)
         self.table.setRootIsDecorated(True)
         self.table.setUniformRowHeights(True)
@@ -72,10 +84,13 @@ class FileListPanel(QtWidgets.QWidget):
 
         header_view = self.table.header()
         header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
-        header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
-        self.table.setColumnWidth(0, 300)
+        header_view.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 260)
         self.table.setColumnWidth(1, 80)
-        self.table.setColumnWidth(2, 190)
+        self.table.setColumnWidth(2, 70)
+        self.table.setColumnWidth(3, 90)
+        self.table.setColumnWidth(5, 150)
+        self.table.setSortingEnabled(True)
 
         add_reveal_menu(self.table)
         layout.addWidget(self.table, 1)
@@ -110,9 +125,10 @@ class FileListPanel(QtWidgets.QWidget):
         item = QtWidgets.QTreeWidgetItem(self.table)
         item.setText(0, sequence.name)
         item.setText(1, human(sequence.size))
-        item.setText(3, self._relative(os.path.dirname(sequence.entries[0].path)
+        self._set_verdict(item, sequence.folder)
+        item.setText(6, self._relative(os.path.dirname(sequence.entries[0].path)
                                        if sequence.entries else ""))
-        item.setText(4, age_label(sequence.mtime))
+        item.setText(7, age_label(sequence.mtime))
 
         first = sequence.entries[0] if sequence.entries else None
         if first is not None:
@@ -127,9 +143,34 @@ class FileListPanel(QtWidgets.QWidget):
                 child = QtWidgets.QTreeWidgetItem(item)
                 child.setText(0, os.path.basename(entry.path))
                 child.setText(1, human(entry.size))
-                child.setText(4, age_label(entry.mtime))
+                child.setText(7, age_label(entry.mtime))
                 child.setData(0, Qt.UserRole, entry.path)
                 self._set_users(child, entry)
+
+    def _set_verdict(self, item, folder):
+        """Carry the folder's verdict, confidence and reason onto the row."""
+        if folder is None:
+            return
+
+        verdict = folder.verdict
+        item.setText(2, rules.VERDICT_LABEL.get(verdict, ""))
+        item.setIcon(2, verdict_icon(verdict))
+        item.setForeground(2, QtGui.QBrush(
+            VERDICT_FILL.get(verdict, VERDICT_FILL[None]).lighter(160)))
+
+        if getattr(folder, "confidence", None):
+            item.setText(3, rules.CONFIDENCE_LABEL[folder.confidence])
+            item.setForeground(3, QtGui.QBrush(
+                _CONFIDENCE_COLOUR.get(folder.confidence,
+                                       QtGui.QColor("#9aa0a6"))))
+            if folder.signals:
+                item.setToolTip(3, "%d signal%s agree:\n  %s"
+                                % (len(folder.signals),
+                                   "" if len(folder.signals) == 1 else "s",
+                                   "\n  ".join(folder.signals)))
+
+        item.setText(4, folder.reason or "")
+        item.setToolTip(4, folder.reason or "")
 
     def _set_users(self, item, entry):
         """

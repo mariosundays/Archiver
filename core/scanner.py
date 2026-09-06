@@ -119,7 +119,7 @@ class FileEntry(object):
     """One file on disk, with what we worked out about it."""
 
     __slots__ = ("path", "size", "mtime", "category", "referenced",
-                 "superseded", "used_by")
+                 "superseded", "used_by", "folder")
 
     def __init__(self, path, size, mtime):
         self.path = path
@@ -129,6 +129,7 @@ class FileEntry(object):
         self.referenced = False
         self.superseded = False
         self.used_by = []       # scenes naming this file, when readable
+        self.folder = None      # the FolderReport holding it
 
     @property
     def name(self):
@@ -177,6 +178,11 @@ class Sequence(object):
     @property
     def superseded(self):
         return all(entry.superseded for entry in self.entries)
+
+    @property
+    def folder(self):
+        """The FolderReport these frames live in, for verdict and reason."""
+        return getattr(self.entries[0], "folder", None) if self.entries             else None
 
 
 class FolderReport(object):
@@ -301,7 +307,15 @@ class ScanResult(object):
         return self.size_of(rules.DROP)
 
     def files_in_category(self, category):
-        """Every file of one category, as sequences, biggest first."""
+        """
+        Every file of one category, as sequences, biggest first.
+
+        Each entry carries a back-reference to its FolderReport, so the panel
+        can show the same verdict, confidence and reason the findings tab
+        does. Without it, drilling into a bar segment gave a bare file list
+        and the same question had two different answers depending on where
+        you asked it.
+        """
         return group_sequences(
             [entry for folder in self.folders for entry in folder.entries
              if entry.category == category])
@@ -791,6 +805,8 @@ def scan(root, progress=None, scene_progress=None):
         folder.entries = entries
         for entry in entries:
             entry.category = rules.classify(entry.path, root)
+        for entry in entries:
+            entry.folder = folder
         folder.sequences = group_sequences(entries)
 
         if not entries and not _occupied(path):

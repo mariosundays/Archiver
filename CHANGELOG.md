@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.2 -- 2026-09-06
+
+### Fixed
+
+- **The drill-down panel and the findings tab described the same folders
+  differently.** Double-clicking a Drop or Review segment gave a bare list --
+  file, size, folder, age -- while the findings tab showed the verdict, the
+  confidence and the reason for exactly the same folders. The same question
+  had two different answers depending on where it was asked, which is how a
+  tool stops being trusted.
+
+  The panel now carries Verdict, Confidence and Why, matching the findings
+  tab, and is sortable like it. Every file entry keeps a back-reference to
+  its FolderReport so the verdict travels with it.
+
 ## 0.6.1 -- 2026-09-06
 
 ### Fixed

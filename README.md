@@ -211,7 +211,7 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.6.1** — all six steps of the wizard, plus the Cinema 4D asset export
+**v0.6.2** — all six steps of the wizard, plus the Cinema 4D asset export
 that closes the `.c4d` blind spot. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
