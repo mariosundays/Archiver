@@ -644,3 +644,51 @@ class TestStagingIsNotScanned(unittest.TestCase):
             self.assertEqual(result.staged_files, 0)
         finally:
             shutil.rmtree(clean_root, ignore_errors=True)
+
+
+class TestEmbeddedVersionFolders(unittest.TestCase):
+    """
+    Dailies named SHOT_vNNN_SHOT: one folder per shot per version, all
+    siblings. Grouping by parent alone compares shot 70 against shot 50.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_ver2_").replace(
+            "\\", "/")
+        base = self.root + "/E_OUTPUT/DAILIES/SEQUENCES/ROD_BOTTLE_"
+        for name in ("SH010_v002_SH010", "SH010_v003_SH010",
+                     "SH050_v005_SH050", "SH050_v006_SH050",
+                     "SH070_v001_SH070"):
+            write(base + name + "/frame.0001.exr", b"x" * 1024)
+        self.result = scanner.scan(self.root)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def folder(self, tail):
+        for folder in self.result.folders:
+            if folder.relative.endswith(tail):
+                return folder
+        self.fail("no folder ending %r" % tail)
+
+    def test_older_version_of_a_shot_drops(self):
+        self.assertEqual(self.folder("SH010_v002_SH010").verdict, rules.DROP)
+        self.assertEqual(self.folder("SH050_v005_SH050").verdict, rules.DROP)
+
+    def test_newest_version_of_a_shot_survives(self):
+        self.assertNotEqual(self.folder("SH010_v003_SH010").verdict,
+                            rules.DROP)
+        self.assertNotEqual(self.folder("SH050_v006_SH050").verdict,
+                            rules.DROP)
+
+    def test_the_only_version_of_a_shot_is_untouched(self):
+        # The case stem-grouping exists to protect: SH070 has one version, and
+        # pooling by parent would supersede it against SH050_v006.
+        self.assertNotEqual(self.folder("SH070_v001_SH070").verdict,
+                            rules.DROP)
+
+    def test_a_dropped_row_carries_its_confidence(self):
+        folder = self.folder("SH010_v002_SH010")
+        self.assertEqual(folder.confidence, rules.STRONG)
+        self.assertIn("STRONG", folder.reason)
+        self.assertIn("newer version", folder.reason)

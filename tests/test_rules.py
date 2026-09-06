@@ -294,3 +294,71 @@ class TestExpensiveSim(unittest.TestCase):
         for path in ("D:/p/geo/x.bgeo", "D:/p/tex/wood.exr",
                      "D:/p/simple_things/x.bgeo", "D:/p/abc/model.abc"):
             self.assertFalse(rules.is_expensive_sim(path), path)
+
+
+class TestEmbeddedVersions(unittest.TestCase):
+    """
+    A version with more name after it: SHOT_v002_SH060.
+
+    The old pattern ended in \b, which never matches between "2" and "_"
+    because underscore is a word character -- so a whole project of dailies
+    named this way had NO detectable version and nothing was ever superseded.
+    """
+
+    def test_version_in_the_middle_of_a_name(self):
+        self.assertEqual(
+            rules.version_of("ROD_WHISKEY_BOTTLE_SH050_v006_SH050"), 6)
+        self.assertEqual(
+            rules.version_of("ROD_WHISKEY_BOTTLE_SH070_v001_SH070"), 1)
+
+    def test_versions_of_one_shot_share_a_stem(self):
+        a = rules.version_stem("ROD_WHISKEY_BOTTLE_SH050_v005_SH050")
+        b = rules.version_stem("ROD_WHISKEY_BOTTLE_SH050_v006_SH050")
+        self.assertEqual(a, b)
+
+    def test_different_shots_do_not_share_a_stem(self):
+        # Pooling these would compare shot 70 against shot 50 and call the
+        # only version of shot 70 superseded.
+        a = rules.version_stem("ROD_WHISKEY_BOTTLE_SH050_v006_SH050")
+        b = rules.version_stem("ROD_WHISKEY_BOTTLE_SH070_v001_SH070")
+        self.assertNotEqual(a, b)
+
+    def test_the_old_forms_still_work(self):
+        self.assertEqual(rules.version_of("cache_v003.bgeo"), 3)
+        self.assertEqual(rules.version_of("shot.v12.exr"), 12)
+        self.assertEqual(rules.version_of("beauty_v2"), 2)
+
+    def test_a_frame_number_is_still_not_a_version(self):
+        self.assertIsNone(rules.version_of("render.0004.exr"))
+
+
+class TestConfidence(unittest.TestCase):
+    """
+    Words, not percentages. A number would be invented, and false precision
+    on a tool that deletes things invites acting without checking.
+    """
+
+    def test_two_signals_is_strong(self):
+        signals = rules.drop_signals(rules.CAT_COMP, superseded=True)
+        self.assertEqual(len(signals), 2)
+        self.assertEqual(rules.confidence(signals), rules.STRONG)
+
+    def test_one_signal_is_moderate(self):
+        signals = rules.drop_signals(rules.CAT_COMP)
+        self.assertEqual(rules.confidence(signals), rules.MODERATE)
+
+    def test_no_signals_is_weak(self):
+        self.assertEqual(rules.confidence([]), rules.WEAK)
+
+    def test_every_signal_is_a_checkable_claim(self):
+        # The point of naming them: the user can go and verify each one.
+        signals = rules.drop_signals(rules.CAT_CACHE, superseded=True,
+                                     referenced=True)
+        self.assertTrue(signals)
+        for signal in signals:
+            self.assertGreater(len(signal), 10)
+
+    def test_a_slow_sim_does_not_count_as_cheap_output(self):
+        cheap = rules.drop_signals(rules.CAT_RENDER)
+        slow = rules.drop_signals(rules.CAT_RENDER, expensive=True)
+        self.assertGreater(len(cheap), len(slow))

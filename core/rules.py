@@ -286,8 +286,18 @@ _ORDER_PREFIX = re.compile(r"^\d{1,3}[_\-. ]")
 # Trailing version or number on a folder: render_v03, comp2, output_01.
 _TRAILING_VERSION = re.compile(r"[_\-]?v?\d{1,4}$")
 
-# A version token anywhere in a name: shot_v012, cache.v3, name-V02.
-VERSION_RE = re.compile(r"[._\-]v(\d{1,4})\b", re.IGNORECASE)
+# A version token anywhere in a name: shot_v012, cache.v3, name-V02, and
+# crucially SHOT_v002_SH060 -- a version with more name after it.
+#
+# The old pattern ended in \b, which does not match between "2" and "_"
+# because underscore is a word character. So every folder named
+# "..._v002_SH060" -- a whole project's worth of dailies -- had no detectable
+# version at all, and none of them were ever seen as superseded.
+#
+# The trailing group instead requires the digits to END the name or be
+# followed by a separator, which is what "the version token stops here"
+# actually means.
+VERSION_RE = re.compile(r"[._\-]v(\d{1,4})(?=[._\-]|$)", re.IGNORECASE)
 
 # Names that mark a file as disposable whatever else is true.
 BACKUP_HINTS = ("_bak", ".bak", "_backup", "_old", "_tmp", "_temp",
@@ -611,3 +621,66 @@ def sort_key(verdict, size_bytes):
     verdict alone gives no sense of what is worth acting on.
     """
     return (VERDICT_ORDER.get(verdict, 1), -size_bytes)
+
+
+# ---------------------------------------------------------------------------
+# Confidence
+#
+# Deliberately words, not a percentage. A number like "87% likely unused"
+# would be invented -- there is no calibration data behind it -- and false
+# precision on a tool that deletes things invites acting without checking.
+#
+# What IS real is how many independent signals agree, and each one is a claim
+# you can go and verify. So the report says how much evidence there is and
+# names it, rather than compressing it into a figure.
+# ---------------------------------------------------------------------------
+
+STRONG = "strong"
+MODERATE = "moderate"
+WEAK = "weak"
+
+CONFIDENCE_LABEL = {
+    STRONG: "STRONG",
+    MODERATE: "MODERATE",
+    WEAK: "WEAK",
+}
+
+
+def confidence(signals):
+    """
+    Turn a list of agreeing signals into a confidence word.
+
+    Two or more independent signals is strong: each one alone can mislead,
+    but they fail in different ways, so agreement means something.
+    """
+    count = len(signals)
+    if count >= 2:
+        return STRONG
+    if count == 1:
+        return MODERATE
+    return WEAK
+
+
+def drop_signals(category, superseded=False, referenced=None,
+                 trust_references=True, expensive=False):
+    """
+    The independent reasons to believe something is safe to drop.
+
+    Each is phrased as a fact the user can check, because the point is to let
+    them verify the verdict rather than take it on trust.
+    """
+    signals = []
+
+    if superseded:
+        signals.append("a newer version sits alongside it")
+
+    if category in (CAT_RENDER, CAT_COMP) and not expensive:
+        signals.append("it is output, re-makeable from the scene")
+
+    if category == CAT_CACHE and referenced and trust_references:
+        signals.append("a readable scene names it, so it re-cooks")
+
+    if category in (CAT_BACKUP, CAT_TEMP):
+        signals.append("its folder marks it as disposable")
+
+    return signals

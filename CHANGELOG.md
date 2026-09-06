@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.0 -- 2026-09-06
+
+### Fixed -- an entire project of dailies had no detectable version
+
+- **A version with more name after it was invisible.** `VERSION_RE` ended in
+  ``, which never matches between "2" and "_" because underscore is a word
+  character -- so `ROD_WHISKEY_BOTTLE_SH050_v006_SH050` parsed as having NO
+  version. On a real project that meant 13 shot folders, 1.4 GB of superseded
+  dailies, were never seen as superseded at all.
+- **Version folders were grouped by parent alone.** Once the versions were
+  visible, all seven shots in one `SEQUENCES/` folder pooled together, so
+  `SH070_v001` -- the only version of that shot -- was compared against
+  `SH050_v006` and would have been called superseded. Grouping is now by
+  (parent, versionless stem), which is what says two folders are versions of
+  the SAME thing.
+
+### Added
+
+- **Confidence on every Drop**, as a word and the signals behind it:
+  "STRONG -- 2 signals agree: a newer version sits alongside it; it is
+  output, re-makeable from the scene."
+
+  Deliberately not a percentage. A number like "87% likely unused" would be
+  invented -- there is no calibration data behind it -- and false precision on
+  a tool that deletes things invites acting without checking. Each signal is
+  instead a claim you can go and verify.
+
+### Notes
+
+- Verified on a real project (176_Omnicom_WiskeyBottle): every older shot
+  version drops with STRONG confidence, every newest version reviews, and the
+  single-version shot is untouched.
+- 327 tests.
+
 ## 0.5.0 -- 2026-09-06
 
 ### Added

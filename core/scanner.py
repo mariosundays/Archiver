@@ -197,6 +197,9 @@ class FolderReport(object):
         self.reason = ""
         self.category = rules.CAT_OTHER
         self.is_empty = False
+        self.superseded = False
+        self.confidence = None
+        self.signals = []
 
     @property
     def relative(self):
@@ -577,20 +580,31 @@ def mark_superseded_folders(folders, root):
     Deliberately does NOT apply to source or scene folders: a tex/v01 may hold
     textures that tex/v03 does not, and losing those is unrecoverable.
     """
-    by_parent = defaultdict(list)
+    # Grouped by (parent, versionless name), NOT by parent alone.
+    #
+    # A folder of dailies holds one directory per shot per version --
+    # SH010_v002, SH010_v003, SH050_v005, SH050_v006 -- all siblings. Pooling
+    # them by parent compares SH070_v001 against SH050_v006 and calls the only
+    # version of shot 70 superseded, which would offer live work for deletion.
+    # The stem is what says two folders are versions of the SAME thing.
+    by_group = defaultdict(list)
     for path in folders:
         parent = clean(os.path.dirname(path))
         name = os.path.basename(clean(path))
         version = rules.version_of(name) if name else None
-        # A bare "v03" has no stem for version_of's separator to find.
+        stem = rules.version_stem(name) if name else ""
+        # A bare "v03" has no stem for version_of's separator to find, and
+        # its siblings are distinguished by the parent alone.
         if version is None:
             bare = re.match(r"^v(\d{1,4})$", name.lower())
-            version = int(bare.group(1)) if bare else None
+            if bare:
+                version = int(bare.group(1))
+                stem = ""
         if version is not None:
-            by_parent[parent].append((version, path))
+            by_group[(parent, stem)].append((version, path))
 
     superseded = set()
-    for parent, versions in by_parent.items():
+    for (parent, _stem), versions in by_group.items():
         if len(versions) < 2:
             continue
         highest = max(version for version, _path in versions)
@@ -649,9 +663,11 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
 
     # A superseded version folder is settled regardless of what is in it: a
     # newer render of the same thing sits alongside.
+    # Record it, then let the loop below run so the confidence layer can see
+    # every signal. The verdict is forced back to DROP after -- a superseded
+    # folder is settled whatever else is in it.
     if key(folder.path) in superseded_folders:
-        return rules.DROP, ("Superseded -- a higher version of this folder "
-                            "exists alongside it.")
+        folder.superseded = True
 
     # Starts as DROP with no reason, and only a SAFER verdict used to record
     # one -- so a folder where everything genuinely drops came out with an
@@ -683,6 +699,34 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
 
     if best is None:
         return rules.REVIEW, "Nothing recognisable in it."
+
+    # A newer version of the same thing sits alongside: that settles it,
+    # whatever the category would otherwise say.
+    if folder.superseded:
+        best = rules.DROP
+
+    # How much independent evidence agrees, named rather than scored. Two
+    # signals that fail in different ways agreeing is worth saying; a
+    # percentage would be invented, and false precision on a tool that
+    # deletes things invites acting without checking.
+    if best == rules.DROP:
+        signals = rules.drop_signals(
+            folder.category,
+            superseded=folder.superseded,
+            referenced=any(e.referenced for e in folder.entries),
+            trust_references=trust_references,
+            expensive=rules.is_expensive_sim(folder.path))
+        if folder.superseded:
+            best_reason = ("Superseded -- a higher version of this folder "
+                           "exists alongside it.")
+        if signals:
+            folder.confidence = rules.confidence(signals)
+            folder.signals = signals
+            best_reason += ("  %s -- %d signal%s agree: %s."
+                            % (rules.CONFIDENCE_LABEL[folder.confidence],
+                               len(signals),
+                               "" if len(signals) == 1 else "s",
+                               "; ".join(signals)))
 
     # A slow sim is regenerable and that is beside the point: re-running a
     # FLIP or pyro cache is an afternoon. Say so, so "Drop" never reads as
