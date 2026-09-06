@@ -633,19 +633,36 @@ class MainWindow(QtWidgets.QMainWindow):
             parts.append("%s %s in %d folders"
                          % (rules.VERDICT_LABEL[verdict], human(size),
                             folders))
+        # What the project WAS against what it is now.
+        #
+        # Once anything is staged the plain total answers the wrong question:
+        # it says how big the project is, when what you want to know is how
+        # much you have already taken off it and how much further you could
+        # go. Both numbers are already known -- total_size is the live
+        # project and staged_bytes is what is sitting in _toDelete -- so put
+        # them side by side rather than making it arithmetic.
+        original = result.total_size + result.staged_bytes
+        if result.staged_bytes:
+            shape = ("was %s   →   now %s   (%s already set aside)"
+                     % (human(original), human(result.total_size),
+                        human(result.staged_bytes)))
+        else:
+            shape = "%s" % human(result.total_size)
+
         self.summary.setText(
             "%s in %s files, %d scenes   —   %s   —   "
             "reclaimable now %s"
-            % (human(result.total_size),
-               "{:,}".format(result.total_files), len(result.scenes),
+            % (shape, "{:,}".format(result.total_files), len(result.scenes),
                "   ".join(parts), human(result.reclaimable())))
 
         notes = []
         if result.staged_files:
+            # The size is already in the headline; this says what to DO
+            # about it rather than repeating the number.
             notes.append(
-                "%s in %d file%s is staged in %s, waiting for you to delete "
-                "or restore it. It is not counted above."
-                % (human(result.staged_bytes), result.staged_files,
+                "%d file%s set aside in %s. Delete that folder when you are "
+                "satisfied, or press Restore to put everything back."
+                % (result.staged_files,
                    "" if result.staged_files == 1 else "s", actions.STAGING))
         if result.opaque_scenes:
             notes.append(

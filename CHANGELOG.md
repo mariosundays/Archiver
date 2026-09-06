@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.3 -- 2026-09-06
+
+### Added
+
+- **The headline shows what the project WAS against what it is now**, once
+  anything has been staged: "was 17.0 GB → now 12.7 GB (4.3 GB already set
+  aside)". The plain total answers the wrong question after a round of
+  cleaning -- it says how big the project is, when what you want is how much
+  you have taken off it and how much further you could go. Both numbers were
+  already known; they are now side by side rather than arithmetic.
+
+- The staging note no longer repeats the size that is in the headline. It
+  says what to DO instead: delete the folder when satisfied, or restore.
+
 ## 0.6.2 -- 2026-09-06
 
 ### Fixed
