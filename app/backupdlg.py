@@ -147,7 +147,7 @@ class BackupDialog(QtWidgets.QDialog):
         buttons = QtWidgets.QHBoxLayout()
         buttons.addStretch(1)
         self.close_button = QtWidgets.QPushButton("Close")
-        self.close_button.clicked.connect(self.reject)
+        self.close_button.clicked.connect(self._close_requested)
         self.start_button = QtWidgets.QPushButton("Archive")
         self.start_button.setObjectName("primary")
         self.start_button.clicked.connect(self._start)
@@ -248,11 +248,34 @@ class BackupDialog(QtWidgets.QDialog):
         self.dest_edit.setEnabled(True)
         self.start_button.setEnabled(True)
 
-        lines = ["Archived %s files (%s)."
-                 % ("{:,}".format(len(copied)),
-                    human(self.plan.total_bytes))]
+        cancelled = getattr(self.plan, "cancelled", False)
+        incomplete = cancelled or bool(failed)
 
-        if self.verify_box.isChecked() and copied:
+        # Report what actually arrived, not what was planned. Pairing the real
+        # copied count with the planned total overstates a partial archive --
+        # dangerous in a tool whose next step is deleting the source.
+        moved = self.plan.bytes_for(copied)
+
+        if cancelled:
+            lines = ["Archive stopped. %s of %s files copied (%s) before you "
+                     "cancelled."
+                     % ("{:,}".format(len(copied)),
+                        "{:,}".format(self.plan.count), human(moved))]
+            lines.append("")
+            lines.append("The project itself is untouched. What reached the "
+                         "destination is a PARTIAL copy — delete it or run "
+                         "the archive again.")
+        else:
+            lines = ["Archived %s files (%s)."
+                     % ("{:,}".format(len(copied)), human(moved))]
+            if len(copied) < self.plan.count:
+                lines.append("%s of %s planned files did not arrive."
+                             % ("{:,}".format(self.plan.count - len(copied)),
+                                "{:,}".format(self.plan.count)))
+
+        # Verify whenever anything was attempted. Skipping it when nothing
+        # copied hides exactly the case the checkbox exists to catch.
+        if self.verify_box.isChecked() and not cancelled:
             self.current.setText("Verifying...")
             QtWidgets.QApplication.processEvents()
             problems = backup.verify(self.plan)
@@ -264,7 +287,8 @@ class BackupDialog(QtWidgets.QDialog):
                                 "" if len(problems) == 1 else "s"))
                 lines.extend("    %s — %s" % (name, why)
                              for name, why in problems[:8])
-            else:
+                incomplete = True
+            elif copied:
                 lines.append("Every file verified at the destination.")
 
         if failed:
@@ -272,12 +296,46 @@ class BackupDialog(QtWidgets.QDialog):
             lines.append("%d could not be copied:" % len(failed))
             lines.extend("    %s — %s" % (name, why)
                          for name, why in failed[:8])
+
+        if incomplete:
             QtWidgets.QMessageBox.warning(self, "Archive", "\n".join(lines))
         else:
             QtWidgets.QMessageBox.information(self, "Archive",
                                               "\n".join(lines))
 
-    def closeEvent(self, event):
+    def _running(self):
+        return self.worker is not None and self.pool.activeThreadCount() > 0
+
+    def _close_requested(self):
+        """
+        Close, cancelling a copy in flight.
+
+        reject() does NOT raise a close event, so hanging cancellation off
+        closeEvent alone left the copy running against a dead window with
+        nothing waiting on it. Both routes come through here.
+        """
+        if self._running():
+            answer = QtWidgets.QMessageBox.question(
+                self, "Archive",
+                "Stop the archive?\n\nFiles already copied are left at the "
+                "destination — the project itself is untouched.",
+                QtWidgets.QMessageBox.Cancel | QtWidgets.QMessageBox.Yes,
+                QtWidgets.QMessageBox.Cancel)
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+            self._stop()
+        self.reject()
+
+    def _stop(self):
+        """Ask the worker to stop and wait for it, so nothing writes on after
+        the dialog is gone."""
         if self.worker is not None:
             self.worker.cancel()
+        self.current.setText("Stopping...")
+        QtWidgets.QApplication.processEvents()
+        self.pool.waitForDone(30000)
+
+    def closeEvent(self, event):
+        if self._running():
+            self._stop()
         super().closeEvent(event)

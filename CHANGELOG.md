@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.3.1 -- 2026-09-06
+
+Eight fixes from a code review of the step 6 archive code. The first three
+together meant a user could cancel an archive, or have it fail entirely, and
+still be told it succeeded -- dangerous in a tool whose next step deletes the
+source.
+
+### Fixed
+
+- **Archiving into the project's PARENT wrote over the live project.** The
+  guard checked the folder you chose, but the copy writes to
+  `<destination>/<name>`, and for `C:/Work/Proj` into `C:/Work` that resolves
+  straight back onto the source. Every file failed with a sharing violation
+  while the module claimed never to touch the original. The check now tests
+  the resolved target, not the chosen folder.
+- **Close did not stop a running copy.** Cancellation hung off `closeEvent`,
+  but Close called `reject()`, which raises no close event -- so the copy kept
+  running against a dead window with nothing waiting on it. Both routes now go
+  through one handler that confirms, cancels, and waits for the worker.
+  Verified: stopped at 101 of 400 files with nothing written afterwards.
+- **A cancelled archive reported success.** Breaking out of the loop returned
+  an empty `failed` list, so a clean run and a cancelled one were
+  indistinguishable. Cancellation is now an explicit flag on the plan, and the
+  dialog says the copy is partial.
+- **Partial archives overstated what arrived**, pairing the real copied count
+  with the planned total. Reported bytes are now summed from the files that
+  actually copied.
+- **Verification was skipped when every file failed** -- exactly the case the
+  checkbox exists to catch.
+- **A second zip of the same project on the same day silently destroyed the
+  first**: a date-only stamp opened in mode `"w"`. A numbered suffix is added
+  when the name is taken.
+- **The free-space check blocked zips that would fit**, demanding the full
+  uncompressed size for an archive that is never larger than its input.
+- **`SKIP_DIRS` pruning applied inside `_toDelete`**, so a `__pycache__` in
+  there was dropped from `skipped_bytes` -- the same undercount the staging
+  branch was written to avoid.
+
+### Notes
+
+- 207 tests, 15 of them new and each pinned to one of the findings above.
+
 ## 0.3.0 -- 2026-09-06
 
 Step 6, and with it the whole wizard. Archiver now takes a project from

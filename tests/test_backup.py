@@ -121,6 +121,155 @@ class TestRefusals(BackupCase):
             shutil.rmtree(sibling, ignore_errors=True)
 
 
+class TestParentDestination(BackupCase):
+    """
+    Archiving into the project's PARENT resolves <dest>/<name> straight back
+    onto the live project. The folder the user picks looks innocent; it is the
+    target the copy writes to that is the problem.
+    """
+
+    def test_parent_folder_is_refused(self):
+        parent = os.path.dirname(self.root)
+        p = backup.plan(self.root, parent)
+        self.assertTrue(p.problems, "archiving over the project was allowed")
+        self.assertIn("over the project", p.problems[0])
+
+    def test_original_survives_a_refused_parent_archive(self):
+        parent = os.path.dirname(self.root)
+        backup.run(backup.plan(self.root, parent))
+        with open(self.root + "/tex/wood.exr", "rb") as handle:
+            self.assertEqual(handle.read(), b"w" * 4096)
+
+    def test_a_zip_into_the_parent_is_fine(self):
+        # A zip is one new file beside the project, not a folder over it.
+        p = backup.plan(self.root, os.path.dirname(self.root), as_zip=True)
+        self.assertEqual(p.problems, [])
+
+
+class TestCancellation(BackupCase):
+    """
+    A cancelled run and a clean one both return an empty `failed` list, so
+    cancellation has to be reported explicitly -- otherwise the dialog tells
+    someone who just pressed Cancel that the archive succeeded.
+    """
+
+    def _stop_after(self, count):
+        seen = []
+
+        def progress(index, total, relative):
+            seen.append(relative)
+            return len(seen) <= count
+
+        return progress
+
+    def test_cancelled_copy_is_flagged(self):
+        p = backup.plan(self.root, self.dest)
+        copied, failed = backup.run(p, self._stop_after(1))
+        self.assertTrue(p.cancelled)
+        self.assertLess(len(copied), p.count)
+        self.assertEqual(failed, [])
+
+    def test_completed_copy_is_not_flagged(self):
+        p = backup.plan(self.root, self.dest)
+        backup.run(p)
+        self.assertFalse(p.cancelled)
+
+    def test_cancelled_zip_is_flagged(self):
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(p, self._stop_after(1))
+        self.assertTrue(p.cancelled)
+
+    def test_the_flag_resets_between_runs(self):
+        p = backup.plan(self.root, self.dest)
+        backup.run(p, self._stop_after(1))
+        backup.run(p)
+        self.assertFalse(p.cancelled)
+
+
+class TestPartialTotals(BackupCase):
+
+    def test_bytes_for_reports_only_what_arrived(self):
+        # Pairing the real copied count with the PLANNED total overstates a
+        # partial archive.
+        p = backup.plan(self.root, self.dest)
+        copied, _failed = backup.run(p, lambda i, t, r: i < 1)
+        self.assertLess(p.bytes_for(copied), p.total_bytes)
+
+    def test_bytes_for_matches_the_total_on_a_full_run(self):
+        p = backup.plan(self.root, self.dest)
+        copied, _failed = backup.run(p)
+        self.assertEqual(p.bytes_for(copied), p.total_bytes)
+
+
+class TestZipCollision(BackupCase):
+
+    def test_a_second_archive_the_same_day_does_not_clobber(self):
+        first = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(first)
+        first_target = first.zip_target
+        first_size = os.path.getsize(first_target)
+
+        write(self.root + "/tex/extra.exr", b"e" * 8192)
+        second = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(second)
+
+        self.assertNotEqual(second.zip_target, first_target)
+        self.assertTrue(os.path.isfile(first_target),
+                        "the first archive of the day was destroyed")
+        self.assertEqual(os.path.getsize(first_target), first_size)
+
+    def test_verify_checks_the_zip_that_was_written(self):
+        first = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(first)
+        second = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(second)
+        self.assertEqual(backup.verify(second), [])
+
+
+class TestSkippedAccounting(BackupCase):
+
+    def test_noise_folders_inside_staging_still_count(self):
+        # SKIP_DIRS pruning must not apply inside _toDelete, where the walk
+        # exists only to measure what is being left behind.
+        write(self.root + "/tmp/junk.tmp", b"j" * 512)
+        write(self.root + "/tmp/__pycache__/x.pyc", b"p" * 256)
+        actions.stage(self.root, [self.root + "/tmp"], dry_run=False)
+
+        p = backup.plan(self.root, self.dest)
+        self.assertEqual(p.skipped_bytes, 512 + 256)
+        self.assertEqual(p.skipped_files, 2)
+
+    def test_noise_folders_outside_staging_are_still_pruned(self):
+        write(self.root + "/__pycache__/y.pyc", b"p" * 128)
+        p = backup.plan(self.root, self.dest)
+        self.assertEqual(p.count, 3)
+
+
+class TestFreeSpaceForZip(BackupCase):
+
+    def test_a_zip_is_not_blocked_by_the_uncompressed_size(self):
+        # A zip is never bigger than its input, so demanding the full
+        # uncompressed total hard-blocks archives that would fit.
+        real = backup.free_space
+        try:
+            backup.free_space = lambda path: int(
+                (4096 + 2048 + 1024) * 0.95)
+            p = backup.plan(self.root, self.dest, as_zip=True)
+            self.assertEqual(p.problems, [])
+        finally:
+            backup.free_space = real
+
+    def test_a_folder_copy_still_needs_the_full_size(self):
+        real = backup.free_space
+        try:
+            backup.free_space = lambda path: 10
+            p = backup.plan(self.root, self.dest)
+            self.assertTrue(p.problems)
+            self.assertIn("room", p.problems[0])
+        finally:
+            backup.free_space = real
+
+
 class TestCopy(BackupCase):
 
     def test_copies_under_a_folder_named_for_the_project(self):
