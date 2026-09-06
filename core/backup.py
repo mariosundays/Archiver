@@ -143,7 +143,12 @@ def plan(source, destination, as_zip=False, skip_staging=True):
         # "leaving behind" figure wrong by whatever was actually staged.
         if in_staging:
             for name in filenames:
-                if name == actions.MANIFEST:
+                # Same exclusions as the archived side. Counting a Thumbs.db
+                # here but excluding it there makes "leaving behind" measure
+                # something different from what would have been archived --
+                # the mirror image of the undercount this branch was written
+                # to fix.
+                if name == actions.MANIFEST or name.lower() in SKIP_NAMES:
                     continue
                 try:
                     result.skipped_bytes += os.path.getsize(
@@ -170,12 +175,19 @@ def plan(source, destination, as_zip=False, skip_staging=True):
     if not result.files:
         result.problems.append("Nothing to copy.")
 
-    # A zip is never larger than its input and is usually smaller, so
-    # demanding the full uncompressed size hard-blocks archives that would
-    # fit comfortably. Measured on real VFX data the saving is small (~9% on
-    # EXR and MOV), so assume little and check the honest worst case rather
-    # than an optimistic one.
-    needed = int(result.total_bytes * 0.9) if as_zip else result.total_bytes
+    # "A zip is never larger than its input" is false, and assuming a 10%
+    # saving was worse than assuming none: deflate on already-compressed data
+    # -- EXR and MOV, which is most of what this tool archives -- adds a small
+    # amount rather than removing any. Measured: 900,000 bytes of
+    # incompressible data produces a 900,409-byte zip.
+    #
+    # So the honest requirement is the full size plus headroom for the entry
+    # overhead. Refusing an archive that would just fit is a nuisance;
+    # starting one that runs out of room half way is a wasted hour and a
+    # partial archive to clean up.
+    needed = result.total_bytes
+    if as_zip:
+        needed = int(result.total_bytes * 1.01) + 64 * 1024
     free = free_space(result.destination)
     if free is not None and free < needed:
         result.problems.append(
@@ -317,15 +329,24 @@ def zip_path(plan_obj, reserve=False):
     in one day would open the existing file in mode "w" and silently destroy
     the first archive. A numbered suffix is added when the name is taken.
 
-    reserve=True picks the name that will actually be written; the default is
-    a preview for the dialog, which must not be affected by a file appearing
-    between planning and starting.
+    The suffix is applied for the PREVIEW too, not only for the write. Showing
+    an un-suffixed path in the dialog and then writing a suffixed one pointed
+    the user at a file still holding the OLDER archive -- the exact confusion
+    the suffix exists to prevent.
+
+    Once a run has written something, `plan_obj.zip_target` is the answer and
+    is returned unchanged. Recomputing after the write would suffix past the
+    file just created and name one that does not exist.
     """
+    written = getattr(plan_obj, "zip_target", None)
+    if written and not reserve:
+        return written
+
     stamp = time.strftime("%Y%m%d")
     base = clean("%s/%s_%s" % (plan_obj.destination, plan_obj.name, stamp))
 
     candidate = base + ".zip"
-    if not reserve or not os.path.exists(candidate):
+    if not os.path.exists(candidate):
         return candidate
 
     for index in range(2, 1000):
@@ -355,6 +376,28 @@ def verify(plan_obj, sample=None):
                 broken = archive.testzip()
                 if broken is not None:
                     problems.append((broken, "corrupt entry in the zip"))
+
+                # testzip() only checks the CRC of entries that ARE there, so
+                # a cancelled or part-written zip passes it cleanly. Checking
+                # what is missing is the whole point of verifying: an archive
+                # that reports success while incomplete is the dangerous
+                # failure in a tool whose next step deletes the source.
+                present = set(archive.namelist())
+                for _full, relative in plan_obj.files:
+                    entry = plan_obj.name + "/" + relative
+                    if entry not in present:
+                        problems.append((relative, "missing from the zip"))
+
+                # And an entry whose stored size does not match, which catches
+                # a file that changed under us mid-archive.
+                sizes = {info.filename: info.file_size
+                         for info in archive.infolist()}
+                for _full, relative in plan_obj.files:
+                    entry = plan_obj.name + "/" + relative
+                    expected = plan_obj._sizes.get(relative)
+                    if entry in sizes and expected is not None \
+                            and sizes[entry] != expected:
+                        problems.append((relative, "size differs in the zip"))
         except (OSError, IOError, zipfile.BadZipFile) as exc:
             problems.append((target, str(exc)))
         return problems

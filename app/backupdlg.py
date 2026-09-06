@@ -70,6 +70,7 @@ class BackupDialog(QtWidgets.QDialog):
         self.root = root
         self.plan = None
         self.worker = None
+        self._abandoned = False
         self.pool = QtCore.QThreadPool()
 
         self.setWindowTitle("Archive project")
@@ -222,6 +223,7 @@ class BackupDialog(QtWidgets.QDialog):
         self.progress.setValue(0)
         self.progress.show()
 
+        self._abandoned = False
         self.worker = ArchiveWorker(self.plan)
         self.worker.progress.connect(self._on_progress)
         self.worker.finished.connect(self._on_finished)
@@ -243,6 +245,8 @@ class BackupDialog(QtWidgets.QDialog):
 
     @QtCore.Slot(object, object)
     def _on_finished(self, copied, failed):
+        if self._abandoned:
+            return
         self.progress.hide()
         self.current.setText("")
         self.dest_edit.setEnabled(True)
@@ -273,20 +277,30 @@ class BackupDialog(QtWidgets.QDialog):
                              % ("{:,}".format(self.plan.count - len(copied)),
                                 "{:,}".format(self.plan.count)))
 
-        # Verify whenever anything was attempted. Skipping it when nothing
-        # copied hides exactly the case the checkbox exists to catch.
-        if self.verify_box.isChecked() and not cancelled:
+        # Verify whenever anything was attempted, INCLUDING after a cancel.
+        # A cancelled run is precisely the one that leaves a partial copy
+        # behind, so skipping the check there hides the case it exists for.
+        if self.verify_box.isChecked():
             self.current.setText("Verifying...")
             QtWidgets.QApplication.processEvents()
             problems = backup.verify(self.plan)
             self.current.setText("")
             if problems:
                 lines.append("")
-                lines.append("%d file%s did not verify:"
-                             % (len(problems),
-                                "" if len(problems) == 1 else "s"))
-                lines.extend("    %s — %s" % (name, why)
-                             for name, why in problems[:8])
+                if cancelled:
+                    # After a cancel every un-copied file is legitimately
+                    # missing, so listing them restates what the line above
+                    # already said. The count is the useful part.
+                    lines.append("%d of %s files are missing from the "
+                                 "destination, as expected after stopping."
+                                 % (len(problems),
+                                    "{:,}".format(self.plan.count)))
+                else:
+                    lines.append("%d file%s did not verify:"
+                                 % (len(problems),
+                                    "" if len(problems) == 1 else "s"))
+                    lines.extend("    %s — %s" % (name, why)
+                                 for name, why in problems[:8])
                 incomplete = True
             elif copied:
                 lines.append("Every file verified at the destination.")
@@ -327,9 +341,23 @@ class BackupDialog(QtWidgets.QDialog):
         self.reject()
 
     def _stop(self):
-        """Ask the worker to stop and wait for it, so nothing writes on after
-        the dialog is gone."""
+        """
+        Ask the worker to stop and wait for it, so nothing writes on after
+        the dialog is gone.
+
+        The signal is disconnected first. Cancelling does not stop `finished`
+        being emitted, and left connected it ran _on_finished against a
+        rejected, hidden dialog -- an orphaned message box appearing over
+        whatever the user had moved on to, and widget state written to a
+        window that no longer exists.
+        """
         if self.worker is not None:
+            self._abandoned = True
+            try:
+                self.worker.finished.disconnect(self._on_finished)
+                self.worker.progress.disconnect(self._on_progress)
+            except (RuntimeError, TypeError):
+                pass        # already disconnected, or never connected
             self.worker.cancel()
         self.current.setText("Stopping...")
         QtWidgets.QApplication.processEvents()

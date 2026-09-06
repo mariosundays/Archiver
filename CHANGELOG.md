@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.3.2 -- 2026-09-06
+
+A second review of the archive code. 0.3.1 set out to close the "reports
+success while incomplete" class of bug and left three instances of it in the
+zip path -- so this fixes those, plus three smaller ones.
+
+### Fixed
+
+- **The zip free-space check reserved 10% LESS than the input.** "A zip is
+  never larger than its input" is simply false: deflate on already-compressed
+  data -- EXR and MOV, which is most of what this archives -- adds a little
+  rather than removing any. Measured: 900,000 bytes of incompressible data
+  produces a 900,409-byte zip. The check now requires the full size plus
+  headroom, so an archive can no longer start and then run out of room.
+- **A cancelled zip verified clean.** `testzip()` only checks the CRC of the
+  entries that ARE present, so a half-written archive passed. Verification now
+  compares the entry list and the stored sizes against the plan, which is what
+  makes it a completeness check rather than a corruption check.
+- **A cancelled worker still reported to the closed dialog.** Cancelling does
+  not stop `finished` being emitted, so an orphaned "Archive stopped" box
+  appeared over whatever the user had moved on to, and widget state was
+  written to a dead window. The signals are disconnected before cancelling.
+- **Verification was skipped after a cancel** -- the case that leaves a
+  partial copy behind, and so the one it exists for. It now runs, and reports
+  the missing files as a count rather than listing thousands of names that
+  restate what the line above already said.
+- **The dialog previewed a zip path the write would not use.** After a
+  same-day archive it showed `proj_20260906.zip` while the write produced
+  `proj_20260906_2.zip`, pointing the user at the file holding the OLDER
+  archive.
+- **`SKIP_NAMES` was applied only outside staging**, so a `Thumbs.db` in
+  `_toDelete` counted toward "leaving behind" while the same file elsewhere
+  was excluded -- the mirror image of the undercount fixed in 0.3.1.
+
+### Notes
+
+- 215 tests. The three serious fixes were each verified by running the code:
+  a cancelled zip now fails verification, closing mid-copy produces no orphan
+  dialog, and a zip is refused when free space is below its input size.
+
 ## 0.3.1 -- 2026-09-06
 
 Eight fixes from a code review of the step 6 archive code. The first three

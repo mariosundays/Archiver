@@ -226,7 +226,77 @@ class TestZipCollision(BackupCase):
         self.assertEqual(backup.verify(second), [])
 
 
+class TestZipVerification(BackupCase):
+    """
+    testzip() only checks the CRC of entries that ARE present, so a cancelled
+    zip passed it cleanly. Completeness is the whole point of verifying.
+    """
+
+    def test_cancelled_zip_does_not_verify_clean(self):
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        copied, _failed = backup.run(p, lambda i, t, r: i < 1)
+        self.assertTrue(p.cancelled)
+        self.assertLess(len(copied), p.count)
+
+        problems = backup.verify(p)
+        self.assertTrue(problems,
+                        "a part-written zip reported itself as verified")
+        self.assertTrue(any("missing" in why for _name, why in problems))
+
+    def test_complete_zip_verifies(self):
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(p)
+        self.assertEqual(backup.verify(p), [])
+
+    def test_every_missing_entry_is_named(self):
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(p, lambda i, t, r: i < 1)
+        self.assertEqual(len(backup.verify(p)), p.count - 1)
+
+
+class TestZipPathStability(BackupCase):
+    """The preview and the write must name the same file."""
+
+    def test_preview_matches_what_gets_written(self):
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        preview = backup.zip_path(p)
+        backup.run(p)
+        self.assertEqual(p.zip_target, preview)
+
+    def test_preview_is_suffixed_when_the_name_is_taken(self):
+        # Showing an un-suffixed path and writing a suffixed one pointed the
+        # user at the file holding the OLDER archive.
+        first = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(first)
+
+        second = backup.plan(self.root, self.dest, as_zip=True)
+        preview = backup.zip_path(second)
+        self.assertNotEqual(preview, first.zip_target)
+        backup.run(second)
+        self.assertEqual(second.zip_target, preview)
+
+    def test_lookup_after_the_write_returns_the_written_file(self):
+        # Recomputing after writing suffixed PAST the new file and named one
+        # that does not exist, which broke verify().
+        p = backup.plan(self.root, self.dest, as_zip=True)
+        backup.run(p)
+        self.assertTrue(os.path.isfile(backup.zip_path(p)))
+        self.assertEqual(backup.zip_path(p), p.zip_target)
+
+
 class TestSkippedAccounting(BackupCase):
+
+    def test_junk_files_in_staging_are_excluded_like_everywhere_else(self):
+        # Counting a Thumbs.db inside _toDelete but excluding it outside made
+        # "leaving behind" measure something different from what would have
+        # been archived -- the mirror of the undercount that was fixed.
+        write(self.root + "/tmp/junk.tmp", b"j" * 512)
+        write(self.root + "/tmp/Thumbs.db", b"t" * 999)
+        actions.stage(self.root, [self.root + "/tmp"], dry_run=False)
+
+        p = backup.plan(self.root, self.dest)
+        self.assertEqual(p.skipped_bytes, 512)
+        self.assertEqual(p.skipped_files, 1)
 
     def test_noise_folders_inside_staging_still_count(self):
         # SKIP_DIRS pruning must not apply inside _toDelete, where the walk
@@ -247,13 +317,26 @@ class TestSkippedAccounting(BackupCase):
 
 class TestFreeSpaceForZip(BackupCase):
 
-    def test_a_zip_is_not_blocked_by_the_uncompressed_size(self):
-        # A zip is never bigger than its input, so demanding the full
-        # uncompressed total hard-blocks archives that would fit.
+    def test_a_zip_needs_at_least_its_input_size(self):
+        # "A zip is never larger than its input" is false. Deflate on
+        # already-compressed data -- EXR and MOV, most of what this archives
+        # -- ADDS a little: 900,000 bytes measured out at 900,409. Reserving
+        # 90% let a plan start and then run out of room.
+        total = 4096 + 2048 + 1024
         real = backup.free_space
         try:
-            backup.free_space = lambda path: int(
-                (4096 + 2048 + 1024) * 0.95)
+            backup.free_space = lambda path: int(total * 0.95)
+            p = backup.plan(self.root, self.dest, as_zip=True)
+            self.assertTrue(p.problems,
+                            "a zip was allowed to start with less free space "
+                            "than its uncompressed input")
+        finally:
+            backup.free_space = real
+
+    def test_a_zip_with_room_to_spare_is_allowed(self):
+        real = backup.free_space
+        try:
+            backup.free_space = lambda path: 500 * 1024 * 1024
             p = backup.plan(self.root, self.dest, as_zip=True)
             self.assertEqual(p.problems, [])
         finally:
