@@ -91,7 +91,7 @@ you should always know which side of it you are on.
 | 3 | **Select** — folder-level tri-state, nothing ticked by default | done |
 | 4 | **Review** — what you chose, and where you overrode the scan | done |
 | 5 | **Approve** — move the selection to `_toDelete/`, with restore | done |
-| 6 | **Backup** — copy the project out, optionally zipped | not built |
+| 6 | **Archive** — copy the project out, as a folder or a zip | done |
 
 Steps 1–4 are pure reads.
 
@@ -110,6 +110,16 @@ versions of a cache is the damage this tool exists to prevent.
 Deleting empty folders uses `os.rmdir` rather than `shutil.rmtree`, so a
 folder that has gained a file since the scan makes the call fail loudly
 instead of destroying it.
+
+**Archiving copies, never moves**, so an interrupted archive costs time and
+nothing else. `_toDelete` is excluded and its size reported, and everything
+refusable — a destination inside the project, too little free space — is
+checked before a byte moves. Verification compares every file's size at the
+destination afterwards.
+
+On the 3.4 GB test project a folder copy took 3 seconds and a zip took 99,
+for 9% saved: EXR and MOV data barely compresses, and the dialog says so
+before you choose.
 
 ### Reading the view
 
@@ -136,10 +146,11 @@ Archiver/
 │   ├── scanner.py        the walk and the report model
 │   ├── tree.py           rolled-up sizes for the birds-eye view
 │   ├── selection.py      what the user chose
+│   ├── backup.py         copying the project out
 │   ├── actions.py        the ONLY module that writes
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
-└── tests/                166 tests: python tests/run_all.py
+└── tests/                192 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -155,7 +166,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-166 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+192 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -163,7 +174,7 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.2.0** — steps 1–5 of the wizard. See [CHANGELOG.md](CHANGELOG.md).
+**v0.3.0** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with

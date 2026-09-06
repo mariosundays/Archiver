@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0 -- 2026-09-06
+
+Step 6, and with it the whole wizard. Archiver now takes a project from
+"what is in here?" to a verified copy at its archive home.
+
+### Added
+
+- **Archive.** Copies the project to a destination as either a plain folder
+  mirror or a single zip -- your choice at run time. It COPIES, never moves:
+  the original survives an interrupted archive, which is the opposite trade
+  from staging, where a same-filesystem move was the safe one.
+- `_toDelete` is excluded, and its size reported, so the dialog can say what
+  is being left behind rather than silently dropping it.
+- **Everything refusable is checked before a byte moves** -- a destination
+  inside the project (which would copy the archive into itself until the disk
+  filled), the project itself, an empty project, and not enough free space.
+  The size, file count and any objection are all on screen before you start.
+- **Verify afterwards**, on by default: every file's size is compared at the
+  destination, and a zip is tested by reading it back. Not a checksum --
+  hashing 200 GB doubles the time, and the failure worth catching is a
+  truncated or missing file, which a size comparison catches.
+- Copies preserve mtimes, so an archive still looks like the project rather
+  than like the day it was archived.
+
+### Fixed
+
+- **The "leaving behind" figure counted only the manifest.** Pruning the walk
+  at the top of `_toDelete` meant `os.walk` never descended into it, so a
+  staged 500 MB cache was reported as a few hundred bytes.
+
+### Notes
+
+- Measured on the 3.4 GB test project: a folder copy takes **3 seconds**, a
+  zip takes **99** and saves 9%. EXR and MOV data barely compresses. The
+  dialog says so before you choose, rather than after a silent wait.
+- 192 tests.
+
 ## 0.2.0 -- 2026-09-06
 
 Step 5: approving a selection now does something. It moves the chosen folders

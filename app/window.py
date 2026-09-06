@@ -16,11 +16,13 @@
 """
 The main window: check the project, see what can go, select, review.
 
-Steps 1-5 of the wizard. Everything reads except two actions, both delegated
-to core.actions: deleting empty folders, and moving the selection into
-_toDelete. Neither deletes anything that holds data -- the first only removes
-directories with nothing in them at any depth, and the second moves rather
-than deletes and can be undone. Step 6 (archive out) is not built.
+All six steps. Everything reads except three actions, all delegated to
+core.actions and core.backup: deleting empty folders, moving the selection
+into _toDelete, and copying the project out.
+
+None of them can lose data. The first only removes directories with nothing
+in them at any depth; the second moves rather than deletes and can be undone;
+the third copies and never touches the original.
 
 The scan runs on a QThreadPool worker. A cold network project can take a while
 and a frozen window during it would be unacceptable.
@@ -34,6 +36,7 @@ from PySide6.QtCore import Qt
 from core import actions, report, rules, scanner, selection, tree
 from core.scanner import human
 
+from .backupdlg import BackupDialog
 from .bars import (CATEGORY_FILL, Legend, SizeBarDelegate,
                    StackedBar, VERDICT_FILL)
 from .explorer import add_reveal_menu
@@ -235,6 +238,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.scan_button.setObjectName("primary")
         self.scan_button.clicked.connect(self.start_scan)
 
+        self.archive_button = QtWidgets.QPushButton("Archive...")
+        self.archive_button.clicked.connect(self._archive)
+        self.archive_button.setEnabled(False)
+        self.archive_button.setToolTip(
+            "Step 6: copy this project to its archive home.")
+
         self.export_button = QtWidgets.QPushButton("Export JSON")
         self.export_button.clicked.connect(self._export)
         self.export_button.setEnabled(False)
@@ -244,6 +253,7 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(browse)
         row.addWidget(self.scan_button)
         row.addWidget(self.export_button)
+        row.addWidget(self.archive_button)
         return row
 
     def _build_overview(self):
@@ -546,6 +556,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.progress.hide()
         self.scan_button.setEnabled(True)
         self.export_button.setEnabled(True)
+        self.archive_button.setEnabled(True)
 
         self.result = result
         self.tree_root = tree.build(result)
@@ -900,6 +911,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.status.showMessage(lines[0])
         self.start_scan()       # what is on screen no longer matches the disk
+
+    def _archive(self):
+        """Step 6. Copies -- the project itself is never touched."""
+        if not self.result:
+            return
+        BackupDialog(self.result.root, self).exec()
 
     def _restore(self):
         entries = actions.read_manifest(self.result.root)
