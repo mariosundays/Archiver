@@ -149,8 +149,27 @@ CACHE_EXTS = {
     ".sim", ".bclip", ".bphysics", ".rs", ".ass", ".ifd", ".usdc_cache",
 }
 
+# Interchange geometry. Deliberately does NOT include .blend, .ma, .mb or
+# .max: those are scene formats, and listing them here shadowed
+# scene_parser.SCENE_EXTS so a project's scenes stopped being detected at all.
 GEO_EXTS = {".abc", ".obj", ".fbx", ".ply", ".stl", ".usd", ".usda",
-            ".usdc", ".usdz", ".gltf", ".glb"}
+            ".usdc", ".usdz", ".gltf", ".glb", ".3ds", ".dae", ".lwo",
+            ".step", ".stp", ".iges", ".igs", ".sldprt", ".x3d", ".3mf"}
+
+# Interchange formats a DCC also EXPORTS in bulk. Only these become caches
+# when they sit in a cache or render folder.
+#
+# The distinction is about what the format is used for in practice, not what
+# it can technically hold. An .abc in alembic/ is nearly always a sim or
+# animation cache someone wrote out; a .usd likewise. But .obj, .fbx and .mtl
+# are how models ARRIVE -- bought, scanned, or sent by a client -- and a
+# folder name should never be enough to call one regenerable, because if the
+# original is gone it cannot be re-exported from anything.
+CACHEABLE_GEO_EXTS = {".abc", ".usd", ".usda", ".usdc", ".usdz"}
+
+# Sidecars that travel with an imported model. Losing one silently strips a
+# model of its materials, so they follow their owner rather than a folder.
+MODEL_SIDECAR_EXTS = {".mtl"}
 
 VIDEO_EXTS = {".mov", ".mp4", ".avi", ".mxf", ".r3d", ".braw", ".mkv",
               ".prores", ".webm"}
@@ -351,7 +370,9 @@ def category_from_ext(path):
         return CAT_TEMP
     if ext in CACHE_EXTS or ext in TEXTURE_CACHE_EXTS:
         return CAT_CACHE
-    if ext in GEO_EXTS:
+    if ext in GEO_EXTS or ext in MODEL_SIDECAR_EXTS:
+        # A .mtl is nothing without its .obj and vice versa, so it travels
+        # with the model rather than being judged on the folder it sits in.
         return CAT_GEO_IN
     if ext in DOC_EXTS:
         return CAT_DOC
@@ -439,15 +460,22 @@ def classify(path, root, is_dir=False):
     if by_folder in (CAT_BACKUP, CAT_TEMP):
         return by_folder
 
-    # Interchange geometry is the one type whose extension genuinely does not
-    # say what it is. An .abc is imported source in models/, and a generated
-    # cache in cache/ or alembic/ -- and the difference is the whole verdict,
-    # because one is irreplaceable and the other re-cooks.
+    # Some interchange geometry genuinely does not say what it is by
+    # extension. An .abc is imported source in models/ and a generated cache
+    # in cache/ or alembic/, and the difference is the whole verdict: one is
+    # irreplaceable, the other re-cooks.
     #
     # Found the hard way: a 3 GB xpTrail.abc in an "R&D/alembic" folder was
     # 88% of a real project and got called irreplaceable source.
+    #
+    # But this applies ONLY to the formats a DCC writes out in bulk. .obj,
+    # .fbx and .mtl are how models ARRIVE -- bought, scanned, or sent by a
+    # client -- and calling one a cache because of the folder it sits in
+    # offers an irreplaceable model up for deletion. A folder name is not
+    # evidence enough for that.
     if by_ext == CAT_GEO_IN and by_folder in (CAT_CACHE, CAT_RENDER,
-                                              CAT_COMP):
+                                              CAT_COMP) \
+            and ext in CACHEABLE_GEO_EXTS:
         return CAT_CACHE
 
     return by_ext

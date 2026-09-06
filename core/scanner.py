@@ -119,7 +119,7 @@ class FileEntry(object):
     """One file on disk, with what we worked out about it."""
 
     __slots__ = ("path", "size", "mtime", "category", "referenced",
-                 "superseded")
+                 "superseded", "used_by")
 
     def __init__(self, path, size, mtime):
         self.path = path
@@ -128,6 +128,7 @@ class FileEntry(object):
         self.category = rules.CAT_OTHER
         self.referenced = False
         self.superseded = False
+        self.used_by = []       # scenes naming this file, when readable
 
     @property
     def name(self):
@@ -392,19 +393,25 @@ def read_references(scenes, root, progress=None):
     """
     Read every scene and collect what the project as a whole references.
 
-    Returns (paths, folders, opaque): the referenced file paths, the
-    directories some scene builds paths inside, and the scenes whose format we
-    could not read at all.
+    Returns (paths, folders, opaque, used_by): the referenced file paths, the
+    directories some scene builds paths inside, the scenes whose format we
+    could not read at all, and a map of path -> the scenes naming it.
 
     That third value is the important one. A scene we cannot read contributes
     no references, so everything it uses looks unreferenced -- and acting on
     that would archive away live assets. The caller needs to distinguish "read
     it, found nothing" from "could not read it".
+
+    used_by is what lets the UI answer "which scene needs this?", which is the
+    question you actually ask before deleting a 3 GB cache. Knowing a file is
+    referenced is much less useful than knowing what would break.
     """
     root = clean(root)
     paths = set()
     ref_folders = set()
     opaque = []
+    used_by = {}
+    folder_used_by = {}
 
     for index, scene in enumerate(scenes):
         if progress is not None and not progress(index, len(scenes),
@@ -416,30 +423,41 @@ def read_references(scenes, root, progress=None):
             continue
 
         try:
-            paths |= scene_parser.paths_in_scene(scene.path, root)
-            ref_folders |= scene_parser.folders_in_scene(scene.path, root,
-                                                         root)
+            found = scene_parser.paths_in_scene(scene.path, root)
+            folders = scene_parser.folders_in_scene(scene.path, root, root)
         except Exception as exc:      # a malformed scene must not stop a scan
             paths.add(key(scene.path))
             del exc
+            continue
 
-    return paths, ref_folders, opaque
+        paths |= found
+        ref_folders |= folders
+        for path in found:
+            used_by.setdefault(path, []).append(scene.path)
+        for folder in folders:
+            folder_used_by.setdefault(folder, []).append(scene.path)
+
+    return paths, ref_folders, opaque, (used_by, folder_used_by)
 
 
-def mark_referenced(folders, referenced_paths, referenced_folders):
+def mark_referenced(folders, referenced_paths, referenced_folders,
+                    attribution=None):
     """
-    Flag every file some scene refers to, directly or by folder.
+    Flag every file some scene refers to, directly or by folder, and record
+    WHICH scenes those are.
 
     Sequence-aware: a scene naming "cache.$F4.bgeo" resolves to the frames
     that existed when it was read, so a frame outside that range still counts
     as referenced if its siblings are. Missing that would call half a cache
     unused.
     """
-    stems = set()
+    used_by, folder_used_by = attribution or ({}, {})
+
+    stems = {}
     for path in referenced_paths:
         stem, _frame = split_frame(path)
         if stem:
-            stems.add(stem)
+            stems.setdefault(stem, []).extend(used_by.get(path, []))
 
     for entries in folders.values():
         for entry in entries:
@@ -447,11 +465,13 @@ def mark_referenced(folders, referenced_paths, referenced_folders):
 
             if path_key in referenced_paths:
                 entry.referenced = True
+                entry.used_by = list(used_by.get(path_key, ()))
                 continue
 
             for folder in referenced_folders:
                 if path_key.startswith(folder + "/"):
                     entry.referenced = True
+                    entry.used_by = list(folder_used_by.get(folder, ()))
                     break
             if entry.referenced:
                 continue
@@ -459,6 +479,9 @@ def mark_referenced(folders, referenced_paths, referenced_folders):
             stem, _frame = split_frame(path_key)
             if stem and stem in stems:
                 entry.referenced = True
+                # A frame outside the resolved range belongs to whichever
+                # scenes named the sequence.
+                entry.used_by = list(dict.fromkeys(stems[stem]))
 
 
 def mark_superseded(folders):
@@ -629,12 +652,12 @@ def scan(root, progress=None, scene_progress=None):
     scenes = find_scenes(raw_folders)
     result.scenes = scenes
 
-    referenced_paths, referenced_folders, opaque = read_references(
-        scenes, root, scene_progress)
+    referenced_paths, referenced_folders, opaque, attribution =         read_references(scenes, root, scene_progress)
     result.opaque_scenes = opaque
     trust = result.references_trustworthy
 
-    mark_referenced(raw_folders, referenced_paths, referenced_folders)
+    mark_referenced(raw_folders, referenced_paths, referenced_folders,
+                    attribution)
     mark_superseded(raw_folders)
     superseded_folders = {key(p)
                           for p in mark_superseded_folders(raw_folders, root)}

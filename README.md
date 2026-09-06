@@ -174,7 +174,7 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.3.2** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
+**v0.4.0** — all six steps of the wizard. See [CHANGELOG.md](CHANGELOG.md).
 
 Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
 scenes). The first run on real data found five bugs, all fixed and all with

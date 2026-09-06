@@ -63,7 +63,8 @@ class FileListPanel(QtWidgets.QWidget):
         layout.addLayout(header)
 
         self.table = QtWidgets.QTreeWidget()
-        self.table.setHeaderLabels(["File", "Size", "Folder", "Age"])
+        self.table.setHeaderLabels(
+            ["File", "Size", "Used by", "Folder", "Age"])
         self.table.setAlternatingRowColors(True)
         self.table.setRootIsDecorated(True)
         self.table.setUniformRowHeights(True)
@@ -71,9 +72,10 @@ class FileListPanel(QtWidgets.QWidget):
 
         header_view = self.table.header()
         header_view.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
-        header_view.setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
-        self.table.setColumnWidth(0, 340)
-        self.table.setColumnWidth(1, 90)
+        header_view.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 300)
+        self.table.setColumnWidth(1, 80)
+        self.table.setColumnWidth(2, 190)
 
         add_reveal_menu(self.table)
         layout.addWidget(self.table, 1)
@@ -108,14 +110,15 @@ class FileListPanel(QtWidgets.QWidget):
         item = QtWidgets.QTreeWidgetItem(self.table)
         item.setText(0, sequence.name)
         item.setText(1, human(sequence.size))
-        item.setText(2, self._relative(os.path.dirname(sequence.entries[0].path)
+        item.setText(3, self._relative(os.path.dirname(sequence.entries[0].path)
                                        if sequence.entries else ""))
-        item.setText(3, age_label(sequence.mtime))
+        item.setText(4, age_label(sequence.mtime))
 
         first = sequence.entries[0] if sequence.entries else None
         if first is not None:
             item.setData(0, Qt.UserRole, first.path)
             item.setToolTip(0, first.path)
+            self._set_users(item, first)
 
         # Individual frames only when there is more than one; a single file
         # dressed as an expandable group is just noise.
@@ -124,8 +127,31 @@ class FileListPanel(QtWidgets.QWidget):
                 child = QtWidgets.QTreeWidgetItem(item)
                 child.setText(0, os.path.basename(entry.path))
                 child.setText(1, human(entry.size))
-                child.setText(3, age_label(entry.mtime))
+                child.setText(4, age_label(entry.mtime))
                 child.setData(0, Qt.UserRole, entry.path)
+                self._set_users(child, entry)
+
+    def _set_users(self, item, entry):
+        """
+        Which scenes name this file.
+
+        The question you actually ask before deleting a cache is not "is this
+        referenced?" but "what breaks if it goes?". An empty cell is honest
+        ambiguity, not a verdict: it means no READABLE scene named it, and on
+        a Cinema 4D project no scene is readable at all.
+        """
+        users = getattr(entry, "used_by", None)
+        if not users:
+            return
+
+        names = [os.path.splitext(os.path.basename(u))[0] for u in users]
+        unique = list(dict.fromkeys(names))
+        text = unique[0] if len(unique) == 1 else "%s +%d" % (unique[0],
+                                                             len(unique) - 1)
+        item.setText(2, text)
+        item.setForeground(2, QtGui.QBrush(QtGui.QColor("#7fb48f")))
+        item.setToolTip(2, "Referenced by:\n  " + "\n  ".join(
+            os.path.basename(u) for u in users[:20]))
 
     def _relative(self, path):
         if self._root and path.lower().startswith(self._root.lower()):

@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.4.0 -- 2026-09-06
+
+Two changes from using it on real projects.
+
+### Added
+
+- **"Used by" column** in the file panel: which scenes actually name a file.
+  Knowing something is referenced is much less useful than knowing what would
+  break if it went, and that is the question you ask before deleting a cache.
+  Direct references, folder references and sequence patterns all attribute;
+  the tooltip lists every scene. An empty cell is honest ambiguity -- no
+  READABLE scene named it -- not a verdict.
+
+### Fixed
+
+- **`.obj`, `.fbx` and `.mtl` in a cache folder were called caches.** The rule
+  that turns geometry into a cache was written for `.abc` and swept these up
+  with it. But those are how models ARRIVE -- bought, scanned, or sent by a
+  client -- and if the original is gone they cannot be re-exported from
+  anything. Only `.abc` and `.usd`, which a DCC writes out in bulk, become
+  caches by folder now. A `.mtl` follows its `.obj` rather than its folder.
+- Added `.3ds`, `.dae`, `.lwo`, `.step`, `.iges`, `.sldprt`, `.x3d` and `.3mf`
+  as imported geometry.
+
+### Notes
+
+- A near miss while doing this: `.blend`, `.ma` and `.mb` were briefly added
+  to the geometry list, which shadowed the scene formats and made a project's
+  scenes stop being detected entirely. Caught by scanning a real project,
+  where the scene count dropped to zero.
+- Verified on a real 28,768-file Houdini library: 95 scenes read, and a cache
+  sequence correctly attributed to the two scenes sharing it.
+
 ## 0.3.2 -- 2026-09-06
 
 A second review of the archive code. 0.3.1 set out to close the "reports
