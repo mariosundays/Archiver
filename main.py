@@ -22,8 +22,21 @@ from PySide6 import QtGui, QtWidgets
 
 from app.window import MainWindow
 
-RESOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                         "app", "resources")
+def _resource_root():
+    """
+    Where app/resources lives, source tree or frozen build.
+
+    PyInstaller unpacks the bundle to a temp dir and points sys._MEIPASS at
+    it; __file__ then names a path that does not exist, so the icon silently
+    vanishes from a packaged build and the taskbar shows a blank page.
+    """
+    base = getattr(sys, "_MEIPASS", None)
+    if base is None:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, "app", "resources")
+
+
+RESOURCES = _resource_root()
 
 
 def app_icon():

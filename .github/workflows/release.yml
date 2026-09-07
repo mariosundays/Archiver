@@ -1,0 +1,93 @@
+name: Build and Release
+
+# Pushing a version tag (v0.6.5, v0.6.5-beta) builds the Windows installer
+# and a portable zip, then attaches both to a GitHub Release.
+on:
+  push:
+    tags:
+      - "v*"
+  # Build from the Actions tab without tagging: produces artifacts, no Release.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # Packaging a build whose tests fail wastes everyone's time, and this
+      # suite runs in about two seconds.
+      - name: Run tests
+        run: python tests/run_all.py
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = python -c "import core; print(core.VERSION)"
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build app with PyInstaller
+        run: pyinstaller Archiver.spec --clean -y
+
+      # The icon is loaded by path at runtime, so a build missing it still
+      # launches -- with a blank taskbar icon and no sign anything is wrong.
+      - name: Check the bundle is complete
+        shell: pwsh
+        run: |
+          $exe = "dist\Archiver\Archiver.exe"
+          $ico = "dist\Archiver\_internal\app\resources\icon.ico"
+          if (-not (Test-Path $exe)) { throw "missing $exe" }
+          if (-not (Test-Path $ico)) { throw "missing $ico" }
+          "OK: $exe and the icon are present"
+
+      - name: Zip portable build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path releases | Out-Null
+          Compress-Archive -Path 'dist\Archiver\*' -DestinationPath "releases\Archiver_v${{ steps.ver.outputs.version }}_portable.zip" -Force
+
+      - name: Compile installer (Inno Setup)
+        shell: pwsh
+        run: |
+          # Inno Setup 6 ships preinstalled on windows-latest runners.
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc /DMyAppVersion=${{ steps.ver.outputs.version }} installer.iss
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Archiver-${{ steps.ver.outputs.version }}
+          path: |
+            releases\*.zip
+            installer_out\*.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            releases\*.zip
+            installer_out\*.exe
+          # Beta tags stay marked as prereleases.
+          prerelease: ${{ contains(github.ref, '-beta') }}
+          generate_release_notes: true

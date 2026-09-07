@@ -7,4 +7,10 @@ Thumbs.db
 *.orig
 build/
 dist/
+releases/
+installer_out/
+
+# Archiver.spec is checked in on purpose -- CI builds from it, so it is
+# source, not output. Ignore any OTHER spec PyInstaller generates.
 *.spec
+!Archiver.spec

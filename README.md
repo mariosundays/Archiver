@@ -14,6 +14,20 @@ It reads scene files straight off disk rather than opening the application.
 
 ## Install
 
+**The easy way — no Python needed.** Grab the latest
+[release](https://github.com/mariosundays/Archiver/releases) and take either:
+
+| | |
+|---|---|
+| `Archiver_Setup_<version>.exe` | Installer. Per-user by default, so no admin prompt. Start Menu entry, optional desktop shortcut, proper uninstaller. |
+| `Archiver_v<version>_portable.zip` | Unzip anywhere and run `Archiver.exe`. Nothing is installed and nothing is written outside the folder. |
+
+The build is unsigned, so SmartScreen will warn on first run — *More info* →
+*Run anyway*. That is what an unsigned binary from a small publisher looks
+like; if you would rather not, run from source below.
+
+### From source
+
 Windows, Python 3.9 or newer. Nothing to compile.
 
 ```
@@ -271,6 +285,24 @@ python tests/run_all.py
 330 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
+
+---
+
+## Building the installer
+
+```
+pip install pyinstaller
+build.bat
+```
+
+Produces `releases\Archiver_v<version>_portable.zip` and, if
+[Inno Setup 6](https://jrsoftware.org/isdl.php) is installed,
+`installer_out\Archiver_Setup_<version>.exe`. Without Inno Setup you still get
+the zip. The version is read from `core/__init__.VERSION`, so it is never
+typed twice, and the tests must pass before anything is packaged.
+
+Pushing a `v*` tag builds both on GitHub Actions and attaches them to the
+release; tags containing `-beta` are marked as prereleases automatically.
 
 ---
 
