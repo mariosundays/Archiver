@@ -88,6 +88,10 @@ jobs:
           files: |
             releases\*.zip
             installer_out\*.exe
-          # Beta tags stay marked as prereleases.
-          prerelease: ${{ contains(github.ref, '-beta') }}
+          # Everything is a prerelease while the tool is in beta -- including
+          # a plain v0.7.0 tag. Matching only on "-beta" published v0.7.0 as
+          # a stable "Latest release" and it had to be corrected by hand.
+          # Flip this to the commented rule when the beta ends.
+          prerelease: true
+          # prerelease: ${{ contains(github.ref, '-beta') }}
           generate_release_notes: true
