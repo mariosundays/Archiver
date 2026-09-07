@@ -75,11 +75,13 @@ class TestRescanClearsPanel(unittest.TestCase):
         self.assertTrue(any("ALPHA" in row for row in rows))
 
         self.scan(self.second)
-        # Not merely different rows -- no rows at all, and closed. The
-        # segment that opened it may not exist in the new scan.
-        self.assertEqual(self.panel_rows(), [])
-        self.assertEqual(self.window.file_panel.title.text(), "")
-        self.assertFalse(self.window.file_panel.isVisible())
+        # The bar filter is dropped -- the segment that opened it may not
+        # exist in the new scan -- and selecting the new root then shows the
+        # new project's files. What must never survive is the OLD project.
+        rows = self.panel_rows()
+        self.assertFalse([r for r in rows if "ALPHA" in r],
+                         "the previous project's files must not survive")
+        self.assertNotIn("ALPHA", self.window.file_panel.title.text())
 
     def test_panel_still_opens_after_a_rescan(self):
         # Clearing it must not leave it unusable: the same double-click has
@@ -100,7 +102,6 @@ class TestRescanClearsPanel(unittest.TestCase):
         self.scan(self.first)
         self.window._show_verdict_files(rules.DROP)
         self.scan(self.second)
-        self.assertEqual(self.window.file_panel._root, "")
 
         self.window._show_verdict_files(rules.DROP)
         self.assertEqual(os.path.normcase(self.window.file_panel._root),

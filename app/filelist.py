@@ -47,6 +47,7 @@ class FileListPanel(QtWidgets.QWidget):
     """A closable pane listing the files behind one bar segment."""
 
     closed = QtCore.Signal()
+    scope_changed = QtCore.Signal(bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,12 +62,26 @@ class FileListPanel(QtWidgets.QWidget):
         header = QtWidgets.QHBoxLayout()
         self.title = QtWidgets.QLabel("")
         self.title.setStyleSheet("font-size: 13px;")
+
+        # The bars and the tree are two filters over the same rows -- WHAT
+        # and WHERE. This says whether they compose. Off, a bar segment
+        # answers for the whole project; on, it answers for the folder you
+        # have selected. It lives here rather than in the toolbar because it
+        # governs this panel and nothing else.
+        self.scope_box = QtWidgets.QCheckBox("Limit to selected folder")
+        self.scope_box.setObjectName("hint")
+        self.scope_box.setToolTip(
+            "Off: a bar segment lists those files across the whole project.\n"
+            "On: only the ones inside the folder selected in the tree.")
+        self.scope_box.toggled.connect(self.scope_changed.emit)
+
         close = QtWidgets.QToolButton()
         close.setText("✕")
         close.setAutoRaise(True)
         close.setToolTip("Close this panel")
         close.clicked.connect(self.closed.emit)
         header.addWidget(self.title, 1)
+        header.addWidget(self.scope_box)
         header.addWidget(close)
         layout.addLayout(header)
 
@@ -112,8 +127,10 @@ class FileListPanel(QtWidgets.QWidget):
         self._root = ""
         self.table.clear()
         self.title.setText("")
+        # The toggle is a preference, not project data -- leave it alone, or
+        # it silently resets under someone who set it deliberately.
 
-    def show_sequences(self, title, sequences, root):
+    def show_sequences(self, title, sequences, root, empty_note=""):
         """
         Fill the panel. sequences comes from scanner.group_sequences().
 
@@ -128,6 +145,14 @@ class FileListPanel(QtWidgets.QWidget):
         count = sum(sequence.count for sequence in sequences)
         self.title.setText("%s — %s in %s files"
                            % (title, human(total), "{:,}".format(count)))
+
+        if not sequences:
+            # An empty list with no explanation reads as a broken panel. The
+            # usual cause is a scope that excludes everything -- say so.
+            note = QtWidgets.QTreeWidgetItem(self.table)
+            note.setText(0, empty_note or "Nothing here.")
+            note.setForeground(0, QtGui.QBrush(QtGui.QColor("#9aa0a6")))
+            return
 
         shown = sequences[:400]
         for sequence in shown:

@@ -307,7 +307,24 @@ class ScanResult(object):
         """Bytes in DROP folders -- what a clean would actually free."""
         return self.size_of(rules.DROP)
 
-    def files_in_category(self, category):
+    def _in_scope(self, folder, under):
+        """
+        Is this folder at or below `under`?
+
+        The scan is one set of rows and everything on screen is a filter over
+        it, so WHERE (a folder in the tree) and WHAT (a bar segment) have to
+        compose. Compared on the cleaned path with a trailing separator, or
+        "E_OUTPUT" would also match a sibling called "E_OUTPUT_OLD".
+        """
+        if not under:
+            return True
+        base = clean(under).rstrip("/")
+        path = clean(folder.path).rstrip("/")
+        if os.name == "nt":
+            base, path = base.lower(), path.lower()
+        return path == base or path.startswith(base + "/")
+
+    def files_in_category(self, category, under=None):
         """
         Every file of one category, as sequences, biggest first.
 
@@ -316,22 +333,41 @@ class ScanResult(object):
         does. Without it, drilling into a bar segment gave a bare file list
         and the same question had two different answers depending on where
         you asked it.
+
+        `under` limits the answer to one folder and its subtree -- the tree
+        rolls sizes up the same way, so a scoped list agrees with the size
+        bar of the row you selected.
         """
         return group_sequences(
-            [entry for folder in self.folders for entry in folder.entries
+            [entry for folder in self.folders
+             if self._in_scope(folder, under)
+             for entry in folder.entries
              if entry.category == category])
 
-    def files_with_verdict(self, verdict):
+    def files_with_verdict(self, verdict, under=None):
         """
         Every file in folders carrying one verdict, as sequences.
 
         Verdict lives on the FOLDER, not the file, so this asks which folders
         earned it and takes their contents -- the same unit the summary bar
-        measured, so the two always agree.
+        measured, so the two always agree. `under` limits it to a subtree.
         """
         return group_sequences(
             [entry for folder in self.folders
-             if folder.verdict == verdict for entry in folder.entries])
+             if folder.verdict == verdict and self._in_scope(folder, under)
+             for entry in folder.entries])
+
+    def files_under(self, under):
+        """
+        Everything in one folder and below it, whatever its category.
+
+        What the panel shows when you simply select a folder in the tree:
+        no verdict or category filter, just "what is in here".
+        """
+        return group_sequences(
+            [entry for folder in self.folders
+             if self._in_scope(folder, under)
+             for entry in folder.entries])
 
 
 def walk(root, progress=None, staging=None):

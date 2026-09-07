@@ -217,6 +217,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tree_root = None
         self.current = None
         self.selection = None
+        # The standing question the file panel is answering, so a change of
+        # scope can re-ask it: ("category"|"verdict"|"folder", value).
+        self._request = (None, None)
+        self.current_node = None    # the folder selected in the tree
         self._syncing = False
         self.pool = QtCore.QThreadPool()
         self.worker = None
@@ -356,6 +360,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.file_panel = FileListPanel()
         self.file_panel.closed.connect(self._close_file_panel)
+        self.file_panel.scope_changed.connect(self._on_scope_changed)
         self.file_panel.hide()
         self.overview_split.addWidget(self.file_panel)
         self.overview_split.setStretchFactor(0, 3)
@@ -617,9 +622,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tree_root = tree.build(result)
         self.selection = selection.Selection(self.tree_root)
         # Everything else on screen is rebuilt from the new result, but the
-        # drill-down panel is only ever filled by a double-click, so nothing
+        # drill-down panel is only ever filled by a user gesture, so nothing
         # would otherwise clear it -- it sat there showing the PREVIOUS
-        # project's files under the new project's tree.
+        # project's files under the new project's tree. current_node points
+        # into the OLD tree and must go with it.
+        self.current_node = None
         self.file_panel.reset()
         self._close_file_panel()
         self._show_node(self.tree_root)
@@ -780,31 +787,86 @@ class MainWindow(QtWidgets.QMainWindow):
             self.folder_tree.scrollToItem(item)
 
     # -- drill-down ---------------------------------------------------------
+    #
+    # One panel, two filters over the same rows: WHAT (a bar segment) and
+    # WHERE (the folder selected in the tree). The panel holds the last
+    # request rather than a finished list, so when either filter changes it
+    # can answer the same question again instead of going stale -- which is
+    # what a scope toggle needs to be honest.
 
     def _show_category_files(self, category):
         """List every file of one category in the panel below the tree."""
-        if not self.result:
-            return
-        self._open_file_panel(
-            rules.CATEGORY_LABEL.get(category, category),
-            self.result.files_in_category(category))
+        self._request = ("category", category)
+        self._refresh_file_panel(open_it=True)
 
     def _show_verdict_files(self, verdict):
-        if not self.result:
-            return
-        self._open_file_panel(
-            "%s folders" % rules.VERDICT_LABEL.get(verdict, verdict),
-            self.result.files_with_verdict(verdict))
+        self._request = ("verdict", verdict)
+        self._refresh_file_panel(open_it=True)
 
-    def _open_file_panel(self, title, sequences):
-        self.file_panel.show_sequences(title, sequences, self.result.root)
-        if not self.file_panel.isVisible():
+    def _show_folder_files(self):
+        """Everything in the selected folder -- no category or verdict."""
+        self._request = ("folder", None)
+        self._refresh_file_panel(open_it=True)
+
+    def _on_scope_changed(self, _checked):
+        # Re-answer the standing question under the new scope. Nothing to do
+        # if the panel was never opened.
+        if self._request[0] is not None:
+            self._refresh_file_panel(open_it=False)
+
+    def _scope_path(self):
+        """The folder the scope toggle points at, or None for no limit."""
+        if not self.file_panel.scope_box.isChecked():
+            return None
+        node = self.current_node
+        if node is None or node is self.tree_root:
+            # The root scopes to everything, which is the same as no scope.
+            return None
+        return node.path
+
+    def _refresh_file_panel(self, open_it):
+        kind, value = self._request
+        if kind is None or not self.result:
+            return
+
+        under = self._scope_path()
+        where = ""
+        if under:
+            rel = under[len(self.result.root):].strip("/") or "."
+            where = " in %s" % rel
+
+        if kind == "category":
+            label = rules.CATEGORY_LABEL.get(value, value)
+            sequences = self.result.files_in_category(value, under=under)
+            empty = "No %s files%s." % (label.lower(), where or " in this "
+                                        "project")
+        elif kind == "verdict":
+            label = "%s folders" % rules.VERDICT_LABEL.get(value, value)
+            sequences = self.result.files_with_verdict(value, under=under)
+            empty = "Nothing with that verdict%s." % (where or
+                                                      " in this project")
+        else:
+            node = self.current_node
+            if node is None:
+                return
+            label = node.name or "Project"
+            sequences = self.result.files_under(node.path)
+            empty = "This folder holds no files -- only subfolders."
+            where = ""
+
+        self.file_panel.show_sequences(label + where, sequences,
+                                       self.result.root, empty_note=empty)
+        if open_it and not self.file_panel.isVisible():
             self.file_panel.show()
             height = self.overview_split.height()
             self.overview_split.setSizes([int(height * 0.6),
                                           int(height * 0.4)])
 
     def _close_file_panel(self):
+        # Drop the standing question too. Leaving it set means the next
+        # folder click silently re-opens the panel on a filter the user
+        # closed, and a scope toggle re-answers a question nobody is asking.
+        self._request = (None, None)
         self.file_panel.hide()
 
     # -- selection ----------------------------------------------------------
@@ -1054,12 +1116,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tree_current(self, item, _previous):
         if item is None:
+            self.current_node = None
             self.detail.clear()
             return
         node = item.data(0, Qt.UserRole)
         if node is None:
+            self.current_node = None
             self.detail.clear()
             return
+
+        self.current_node = node
+
+        # Selecting a folder answers "what is in here?" in the panel below.
+        # The tree and the bars are two ways of asking about the same rows,
+        # and before this only the bars could reach the panel -- clicking
+        # through the tree was a dead end.
+        #
+        # A standing bar filter wins: if you asked for Drop files and then
+        # moved the selection, you still want Drop files, re-scoped. Only an
+        # unfiltered browse switches the panel to plain folder contents.
+        if self._request[0] in ("category", "verdict"):
+            if self.file_panel.scope_box.isChecked():
+                self._refresh_file_panel(open_it=False)
+        else:
+            self._show_folder_files()
 
         # The overview tree holds tree.Node; the panel wants the
         # FolderReport hanging off it. A pure container has none.

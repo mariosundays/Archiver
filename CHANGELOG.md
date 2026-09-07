@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.1 -- 2026-09-07
+
+### Added
+
+- **Selecting a folder in the tree lists its files in the panel below.**
+  Before this the panel could only be opened by double-clicking a bar
+  segment, so clicking through the tree was a dead end -- the tree and the
+  bars are two ways of asking about the same rows, and only one of them
+  could reach the answer.
+
+- **"Limit to selected folder", in the panel header.** The bars ask WHAT (a
+  category or a verdict) and the tree asks WHERE (a folder); this decides
+  whether the two compose. Off, a bar segment answers for the whole project
+  as before. On, it answers only for the selected folder and everything
+  under it -- and moving the selection re-asks the same question somewhere
+  else, so a standing filter follows you around the tree.
+
+  Scope matches on whole path segments, so selecting `E_OUTPUT` never
+  swallows a sibling called `E_OUTPUT_OLD`.
+
+### Changed
+
+- The panel keeps the QUESTION rather than a finished list, so any change of
+  scope re-answers it instead of going stale.
+- An empty result now says why -- "Nothing with that verdict in E_OUTPUT" --
+  rather than showing a bare empty table, which reads as a broken panel.
+- Closing the panel forgets the standing filter, so the next folder click
+  does not silently re-open it on a question you just dismissed.
+
 ## 0.7.0 -- 2026-09-07
 
 ### Changed

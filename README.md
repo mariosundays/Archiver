@@ -1,6 +1,6 @@
 # Archiver
 
-**Beta — v0.7.0.** Working and used on real jobs, but not yet proven on
+**Beta — v0.7.1.** Working and used on real jobs, but not yet proven on
 anybody else's machine or anybody else's projects. Read
 [Before you try it](#before-you-try-it) first.
 
@@ -50,7 +50,7 @@ python archiver.py "D:/Projects/shot" --json out.json
 Check it works before pointing it at anything you care about:
 
 ```
-python tests/run_all.py            # 333 tests, ~2 seconds
+python tests/run_all.py            # 346 tests, ~2 seconds
 ```
 
 The CLI needs nothing but the standard library, so if PySide6 will not install
@@ -250,9 +250,20 @@ before you choose.
 Each tree row carries a proportional bar: length is that folder's share of its
 **parent** (against the whole project, everything below the top two rows is a
 flat nothing), colour is the verdict. Two slim strips above give the
-whole-project split by verdict and by category — double-click a segment, or
-its legend entry, to list the files behind it in a pane below the tree, with
-frame sequences collapsed to one row.
+whole-project split by verdict and by category.
+
+**Everything on screen is a filter over one scan**, and the pane below the
+tree is where the answers land, with frame sequences collapsed to one row:
+
+- **Click a folder** in the tree → that folder's files, whatever their kind.
+- **Double-click a bar segment** (or its legend entry) → every file of that
+  verdict or category, across the project.
+- **Tick "Limit to selected folder"** in the pane's header → the segment now
+  answers for the selected folder and everything under it. Move the
+  selection and the same question is re-asked somewhere else.
+
+So the bars ask *what*, the tree asks *where*, and the checkbox decides
+whether the two combine.
 
 Right-click any row for *Show in Explorer* or *Copy path*.
 
@@ -277,7 +288,7 @@ Archiver/
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
 ├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
-└── tests/                333 tests: python tests/run_all.py
+└── tests/                346 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -293,7 +304,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-333 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+346 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -319,7 +330,7 @@ release; tags containing `-beta` are marked as prereleases automatically.
 
 ## Status
 
-**Beta, v0.7.0.** All six steps of the wizard are built, plus the Cinema 4D
+**Beta, v0.7.1.** All six steps of the wizard are built, plus the Cinema 4D
 asset export that closes the `.c4d` blind spot. See
 [CHANGELOG.md](CHANGELOG.md).
 
