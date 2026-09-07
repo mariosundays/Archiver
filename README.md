@@ -1,16 +1,81 @@
 # Archiver
 
+**Beta — v0.6.5.** Working and used on real jobs, but not yet proven on
+anybody else's machine or anybody else's projects. Read
+[Before you try it](#before-you-try-it) first.
+
 Scan a VFX or 3D project folder and work out what has to survive an archive,
 what can go, and what only you can decide.
 
 Standalone — no Houdini, no Cinema 4D, and nothing beyond PySide6 for the GUI.
 It reads scene files straight off disk rather than opening the application.
 
+---
+
+## Install
+
+Windows, Python 3.9 or newer. Nothing to compile.
+
 ```
-python main.py                     # GUI
+git clone https://github.com/mariosundays/Archiver.git
+cd Archiver
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Then:
+
+```
+python main.py                     # GUI, pick a folder from the toolbar
 python main.py "D:/Projects/shot"  # GUI, scanning that folder
-python archiver.py "D:/Projects/shot" --json report.json
+python archiver.py "D:/Projects/shot"              # CLI report
+python archiver.py "D:/Projects/shot" --json out.json
 ```
+
+Check it works before pointing it at anything you care about:
+
+```
+python tests/run_all.py            # 330 tests, ~2 seconds
+```
+
+The CLI needs nothing but the standard library, so if PySide6 will not install
+you can still run `archiver.py`. The Qt-dependent tests skip themselves when
+PySide6 is absent.
+
+Developed and used on Windows 11. `core/` is pure standard library and should
+behave anywhere, but the GUI's *Show in Explorer* and the C4D plugin installer
+are Windows-only, and nothing has been tested on macOS or Linux.
+
+---
+
+## Before you try it
+
+Please read this bit — it is a beta, and the failure mode is your files.
+
+- **Steps 1 to 4 only read.** Scanning, the findings list and the review
+  screen never write a byte. `test_scanner.TestReadOnly` snapshots the scanned
+  tree and fails if a scan changed anything.
+- **Nothing is ever deleted.** Approving *moves* your selection into
+  `<project>/_toDelete` and writes a manifest so Restore works even after you
+  close the app. You do the deleting yourself, once you are satisfied.
+  Archiving *copies*; it never moves.
+- **Start on a copy, or on a finished job you already have backed up.** Not on
+  live work, and not on the only copy of anything.
+- **Nothing is ticked by default.** You opt in to every folder, so an
+  accidental Approve does nothing.
+- **On a Cinema 4D project, read the C4D section below.** R20+ `.c4d` files
+  cannot be read from outside, so a pure-C4D project gives no reference
+  evidence at all and everything reference-based is held back to *review*.
+  This is the tool's central limitation, not a bug.
+- **The zip path is the least-exercised code here.** Folder-copy archiving has
+  been run on real multi-gigabyte jobs; zip has mostly seen synthetic data.
+  Prefer the folder mirror for now.
+
+Found something wrong? Please open an issue with what you scanned (rough shape
+of the project is enough), what it said, and what you expected. Every scan
+writes a report to the project root as `.archiver_report.json` — that is the
+most useful thing to attach.
 
 ---
 
@@ -187,7 +252,7 @@ Archiver/
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
 ├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
-└── tests/                313 tests: python tests/run_all.py
+└── tests/                330 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -203,7 +268,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-313 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+330 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -211,12 +276,24 @@ in the suite: most of them assert what must NOT happen.
 
 ## Status
 
-**v0.6.4** — all six steps of the wizard, plus the Cinema 4D asset export
-that closes the `.c4d` blind spot. See [CHANGELOG.md](CHANGELOG.md).
+**Beta, v0.6.5.** All six steps of the wizard are built, plus the Cinema 4D
+asset export that closes the `.c4d` blind spot. See
+[CHANGELOG.md](CHANGELOG.md).
 
-Built and validated against a real archived job (3.4 GB, 222 files, 62 C4D
-scenes). The first run on real data found five bugs, all fixed and all with
-regression tests.
+Built and validated against real archived jobs — the empty-folder prune,
+staging, restore and a full archive have all been run on real work. The first
+run on real data found five bugs, all fixed and all with regression tests.
+
+What *beta* means here, honestly:
+
+- It has only ever run on its author's machine, against his own projects,
+  which are mostly Cinema 4D and Houdini. Other layouts and other DCCs are
+  reasoned about but unproven.
+- **The Cinema 4D plugin has never been run inside Cinema 4D.** The half that
+  does not need `c4d` is tested; the plugin itself is written but unexercised.
+- Zip archiving has mostly been run on synthetic data.
+- Real projects have found bugs that 330 green tests did not, five separate
+  times. Expect that to happen again.
 
 ## Related
 
