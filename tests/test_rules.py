@@ -198,10 +198,59 @@ class TestVerdicts(unittest.TestCase):
         self.assertEqual(rules.verdict_for(rules.CAT_CACHE)[0], rules.DROP)
         self.assertEqual(rules.verdict_for(rules.CAT_RENDER)[0], rules.REVIEW)
 
-    def test_superseded_always_drops(self):
-        # Even a category that otherwise never drops.
-        verdict, _ = rules.verdict_for(rules.CAT_SOURCE, superseded=True)
+    def test_supersede_means_different_things_per_category(self):
+        # "A newer version sits alongside" is not one fact. It used to drop
+        # EVERY category, which offered scenes, textures and deliveries for
+        # deletion purely for carrying a version number -- and in the case of
+        # source, broke the cardinal rule outright.
+        for category, want in (
+                (rules.CAT_RENDER, rules.DROP),      # dead weight
+                (rules.CAT_COMP, rules.REVIEW),      # dailies: your call
+                (rules.CAT_SCENE, rules.KEEP),       # every version is kept
+                (rules.CAT_SOURCE, rules.KEEP),      # v01 may hold what v03 lost
+                (rules.CAT_GEO_IN, rules.KEEP),
+                (rules.CAT_DELIVERY, rules.KEEP),    # what shipped, shipped
+                (rules.CAT_DOC, rules.KEEP),
+        ):
+            verdict, _why = rules.verdict_for(category, superseded=True)
+            self.assertEqual(verdict, want, "%s superseded" % category)
+
+    def test_superseded_backup_still_drops_for_being_a_backup(self):
+        # A backup is disposable whether it is the newest or the oldest, so
+        # the version tells you nothing -- and the reason must say the honest
+        # thing rather than blaming the version.
+        verdict, why = rules.verdict_for(rules.CAT_BACKUP, superseded=True)
         self.assertEqual(verdict, rules.DROP)
+        self.assertNotIn("newer version", why[1])
+
+    def test_superseded_cache_needs_proof_it_re_cooks(self):
+        # Dropping an old cache is only safe if something can remake it.
+        proven, _ = rules.verdict_for(rules.CAT_CACHE, superseded=True,
+                                      referenced=True, trust_references=True)
+        self.assertEqual(proven, rules.DROP)
+
+        # Nothing references it: the newer version is not a proven
+        # replacement, it is just newer.
+        unproven, _ = rules.verdict_for(rules.CAT_CACHE, superseded=True,
+                                        referenced=False)
+        self.assertEqual(unproven, rules.REVIEW)
+
+        # C4D: a scene could not be read, so the reference means nothing.
+        untrusted, _ = rules.verdict_for(rules.CAT_CACHE, superseded=True,
+                                         referenced=True,
+                                         trust_references=False)
+        self.assertEqual(untrusted, rules.REVIEW)
+
+    def test_supersede_is_not_a_drop_signal_where_it_carries_no_verdict(self):
+        # Counting it inflated the confidence of a verdict it did not support.
+        for category in (rules.CAT_SCENE, rules.CAT_SOURCE,
+                         rules.CAT_DELIVERY, rules.CAT_BACKUP):
+            signals = rules.drop_signals(category, superseded=True)
+            self.assertFalse([s for s in signals if "newer version" in s],
+                             "%s should not gain a version signal" % category)
+        self.assertTrue(
+            [s for s in rules.drop_signals(rules.CAT_RENDER, superseded=True)
+             if "newer version" in s])
 
     def test_orphan_cache_is_not_droppable(self):
         # A cache is only regenerable while its scene exists.

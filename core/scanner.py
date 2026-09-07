@@ -729,10 +729,20 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
         folder.reason_short = "nothing recognisable"
         return rules.REVIEW, "Nothing recognisable in it."
 
-    # A newer version of the same thing sits alongside: that settles it,
-    # whatever the category would otherwise say.
-    if folder.superseded:
-        best = rules.DROP
+    # A newer version of the same thing sits alongside. What that is worth
+    # depends on what the folder HOLDS -- an old render version is dead
+    # weight, an old cut of the dailies is a record of what was shown. See
+    # rules.SUPERSEDE_DROPS.
+    # mark_superseded_folders only ever flags render/comp/cache folders, and
+    # the policy decides what that is worth. A cache folder whose scenes
+    # could not be read is already held at REVIEW by verdict_for above, so
+    # this does not need to re-litigate the C4D case.
+    _policy = rules.supersede_policy(folder.category)
+    if folder.superseded and _policy is not None:
+        if _policy == rules.DROP:
+            best = rules.DROP
+        elif best == rules.KEEP:
+            best = rules.REVIEW
 
     # How much independent evidence agrees, named rather than scored. Two
     # signals that fail in different ways agreeing is worth saying; a
@@ -745,7 +755,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             referenced=any(e.referenced for e in folder.entries),
             trust_references=trust_references,
             expensive=rules.is_expensive_sim(folder.path))
-        if folder.superseded:
+        if folder.superseded and _policy is not None:
             best_reason = ("Superseded -- a higher version of this folder "
                            "exists alongside it.")
             best_short = "a newer version exists"
@@ -755,6 +765,16 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             # invisible; it has its own column and the detail strip now.
             folder.confidence = rules.confidence(signals)
             folder.signals = signals
+
+    # Superseded but only worth a REVIEW -- dailies and cuts. The block above
+    # only speaks for DROP, and a row moved by a rule with no reason shown is
+    # the row people stop trusting.
+    if (folder.superseded and _policy == rules.REVIEW
+            and best == rules.REVIEW):
+        best_reason = ("A newer version of this folder exists alongside it. "
+                       "Older cuts and dailies are often worth keeping, so "
+                       "this is your call.")
+        best_short = "a newer version exists"
 
     # A slow sim is regenerable and that is beside the point: re-running a
     # FLIP or pyro cache is an afternoon. Say so, so "Drop" never reads as

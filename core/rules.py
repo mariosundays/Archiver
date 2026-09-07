@@ -116,6 +116,57 @@ CATEGORY_VERDICT = {
     CAT_OTHER: REVIEW,
 }
 
+# What a newer version MEANS, per category.
+#
+# "There is a v03 next to this v01" is not one fact -- it means something
+# different depending on what the thing IS, and treating it as universal was
+# wrong in both directions.
+#
+#   SUPERSEDE_DROPS    an older version is genuinely dead weight
+#   SUPERSEDE_REVIEWS  worth surfacing, but only you can decide
+#   (neither)          the version number says nothing about whether to keep it
+#
+# The cases that matter, and why:
+#
+#   SCENES     Every version is kept. shot_v001.hip is not "an old shot": it
+#              is the only record of how the shot looked then, it is a few MB,
+#              and going back to it is a normal working request. This is the
+#              rule Mario stated first and the one the old code broke worst.
+#   SOURCE     Never. A tex_v01 may hold a map tex_v03 does not, and the loss
+#              is unrecoverable. Same reasoning as the folder-level rule.
+#   BACKUP     Version is irrelevant -- a backup is disposable whether it is
+#              the newest or the oldest. It already defaults to DROP for being
+#              a backup, and "a newer version exists" would tell you nothing
+#              you did not know. The reason line matters here: the honest one
+#              is "it is a backup", not "it is old".
+#   RENDER     Yes. An old render version beside a new one is usually the
+#              single biggest reclaimable thing in a project.
+#   CACHE      Yes, but only when a readable scene proves it re-cooks --
+#              handled in verdict_for, not here, because it needs the
+#              reference evidence.
+#   COMP       Review, not drop. Dailies and cut movies live here, and a v001
+#              cut is a record of what was shown on a date, not a draft to be
+#              thrown away. Surfaced with a reason so it can be ticked.
+#   DELIVERY   Never. What went to the client is what went to the client.
+#   DOC        Never. A superseded brief is a few KB of history.
+SUPERSEDE_DROPS = frozenset({CAT_RENDER, CAT_CACHE})
+SUPERSEDE_REVIEWS = frozenset({CAT_COMP, CAT_OTHER})
+
+
+def supersede_policy(category):
+    """
+    What an older version of this category is worth: DROP, REVIEW or None.
+
+    None means the version number carries no verdict of its own and the
+    category's own reasoning stands.
+    """
+    if category in SUPERSEDE_DROPS:
+        return DROP
+    if category in SUPERSEDE_REVIEWS:
+        return REVIEW
+    return None
+
+
 # Why each category defaults where it does.
 #
 # TWO forms, because a table column and an explanation want different things.
@@ -597,11 +648,28 @@ def verdict_for(category, referenced=None, superseded=False,
     reason = (CATEGORY_WHY.get(category, ""),
               CATEGORY_WHY_SHORT.get(category, ""))
 
-    # A superseded version is the strongest signal there is. It applies to
-    # every category, including the ones that otherwise never drop.
-    if superseded:
+    # A newer version sitting alongside means different things for different
+    # things -- see SUPERSEDE_DROPS above. It used to mean DROP for every
+    # category, which quietly offered scenes, textures and deliveries for
+    # deletion just for having a version number.
+    policy = supersede_policy(category)
+    if superseded and policy == DROP:
+        # A cache only drops when something can actually re-cook it. Without
+        # that proof the newer version is not a replacement, it is just newer.
+        if category == CAT_CACHE and not (referenced and trust_references):
+            return REVIEW, (
+                "A newer version of this exists alongside it, but nothing "
+                "here proves it can be re-cooked -- no readable scene "
+                "references it.",
+                "newer version, but unproven")
         return DROP, ("A newer version of this exists alongside it.",
                       "a newer version exists")
+
+    if superseded and policy == REVIEW:
+        return REVIEW, ("A newer version of this exists alongside it. Older "
+                        "cuts and dailies are often worth keeping, so this "
+                        "is your call.",
+                        "a newer version exists")
 
     # A cache is only safely regenerable while the scene that cooks it still
     # exists. Without it, the cache IS the asset.
@@ -699,7 +767,10 @@ def drop_signals(category, superseded=False, referenced=None,
     """
     signals = []
 
-    if superseded:
+    # Only where a newer version actually argues for dropping. A scene or a
+    # texture with a v03 beside it is not evidence of anything, and counting
+    # it here used to inflate the confidence of a verdict it did not support.
+    if superseded and supersede_policy(category) is not None:
         signals.append("a newer version sits alongside it")
 
     if category in (CAT_RENDER, CAT_COMP) and not expensive:

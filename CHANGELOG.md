@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.7.0 -- 2026-09-07
+
+### Changed
+
+- **"A newer version exists" now means different things for different kinds
+  of file.** It used to force DROP for every category, which offered scenes,
+  textures, deliveries and briefs for deletion purely for carrying a version
+  number -- and in the case of source material broke the tool's own cardinal
+  rule, that nothing irreplaceable is dropped for being unreferenced. The
+  folder-level rule had always been careful here; the file-level one was not,
+  and they contradicted each other.
+
+  What each category does with a newer version now:
+
+  | Category | Older version | Why |
+  |---|---|---|
+  | Renders | **drop** | Dead weight, and usually the biggest reclaim in a job. |
+  | Caches | **drop**, if proven | Only when a readable scene names it, so it genuinely re-cooks. Otherwise review. |
+  | Dailies / comps | **review** | A v001 cut is a record of what was shown on a date, not a draft. Your call. |
+  | Scenes | keep | Every version is kept. shot_v001.hip is the only record of how the shot looked then. |
+  | Source / geo | keep | A tex_v01 may hold a map tex_v03 does not. Unrecoverable. |
+  | Deliveries | keep | What shipped, shipped. |
+  | Docs | keep | A superseded brief is a few KB of history. |
+  | Backups | drop | Already disposable. The version is irrelevant, and the reason now says so honestly rather than blaming it. |
+
+  On the WhiskeyBottle job this moves 6 folders and 1.4 GB of dailies out of
+  Drop and into Review, where they wait to be ticked rather than being
+  offered up.
+
+### Fixed
+
+- **Superseded no longer inflates confidence where it carries no verdict.**
+  `drop_signals` counted "a newer version sits alongside it" for every
+  category, so a scene or texture could reach STRONG on evidence that did not
+  support its verdict.
+
 ## 0.6.5 -- 2026-09-07
 
 ### Fixed

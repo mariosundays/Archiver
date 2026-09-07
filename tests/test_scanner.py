@@ -671,9 +671,18 @@ class TestEmbeddedVersionFolders(unittest.TestCase):
                 return folder
         self.fail("no folder ending %r" % tail)
 
-    def test_older_version_of_a_shot_drops(self):
-        self.assertEqual(self.folder("SH010_v002_SH010").verdict, rules.DROP)
-        self.assertEqual(self.folder("SH050_v005_SH050").verdict, rules.DROP)
+    def test_older_version_of_a_shot_is_flagged_but_not_dropped(self):
+        # These are DAILIES. The version IS detected -- that is what this
+        # class tests -- but an older cut is a record of what was shown on a
+        # date, not a draft, so it surfaces as review with the version as its
+        # reason and waits to be ticked. A render folder still drops; see
+        # TestFolderSupersede.
+        for tail in ("SH010_v002_SH010", "SH050_v005_SH050"):
+            folder = self.folder(tail)
+            self.assertTrue(folder.superseded, "%s should be seen as an "
+                                               "older version" % tail)
+            self.assertEqual(folder.verdict, rules.REVIEW)
+            self.assertIn("newer version", folder.reason_short)
 
     def test_newest_version_of_a_shot_survives(self):
         self.assertNotEqual(self.folder("SH010_v003_SH010").verdict,
@@ -691,8 +700,21 @@ class TestEmbeddedVersionFolders(unittest.TestCase):
         # Confidence lives in its own field, NOT appended to the reason:
         # written into the text it fell past where the Why column truncates,
         # so every STRONG was computed and invisible.
-        folder = self.folder("SH010_v002_SH010")
-        self.assertEqual(folder.confidence, rules.STRONG)
-        self.assertGreaterEqual(len(folder.signals), 2)
-        self.assertIn("newer version", " ".join(folder.signals))
-        self.assertNotIn("STRONG", folder.reason)
+        #
+        # Uses a RENDER folder, because confidence is only computed for rows
+        # that actually drop -- the dailies above deliberately do not.
+        root = tempfile.mkdtemp(prefix="archiver_conf_").replace("\\", "/")
+        try:
+            for name in ("SH010_v002", "SH010_v003"):
+                write(root + "/E_OUTPUT/RENDER/ROD_" + name
+                      + "/frame.0001.exr", b"x" * 1024)
+            result = scanner.scan(root)
+            folder = next(f for f in result.folders
+                          if f.relative.endswith("ROD_SH010_v002"))
+            self.assertEqual(folder.verdict, rules.DROP)
+            self.assertEqual(folder.confidence, rules.STRONG)
+            self.assertGreaterEqual(len(folder.signals), 2)
+            self.assertIn("newer version", " ".join(folder.signals))
+            self.assertNotIn("STRONG", folder.reason)
+        finally:
+            shutil.rmtree(root, ignore_errors=True)

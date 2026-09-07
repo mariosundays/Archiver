@@ -1,6 +1,6 @@
 # Archiver
 
-**Beta — v0.6.5.** Working and used on real jobs, but not yet proven on
+**Beta — v0.7.0.** Working and used on real jobs, but not yet proven on
 anybody else's machine or anybody else's projects. Read
 [Before you try it](#before-you-try-it) first.
 
@@ -50,7 +50,7 @@ python archiver.py "D:/Projects/shot" --json out.json
 Check it works before pointing it at anything you care about:
 
 ```
-python tests/run_all.py            # 330 tests, ~2 seconds
+python tests/run_all.py            # 333 tests, ~2 seconds
 ```
 
 The CLI needs nothing but the standard library, so if PySide6 will not install
@@ -114,10 +114,21 @@ whose scene has been deleted share a category but get different verdicts.
 - **Nothing irreplaceable is ever dropped for being unreferenced.** An
   unreferenced texture is still a texture. Reference evidence can only move a
   verdict *toward* keep, never toward drop.
-- **Superseded beats everything.** A `render/v01` sitting beside `render/v03`
-  is usually the largest reclaimable thing in a project. It applies only to
-  renders, comps and caches — never to source or scenes, where `v01` may hold
-  something `v03` does not.
+- **"A newer version exists" means different things for different files.** A
+  `render/v01` beside a `render/v03` is usually the largest reclaimable thing
+  in a project. A `shot_v001.hip` beside a `shot_v003.hip` is not old, it is
+  the only record of how the shot looked then. So the version drives the
+  verdict only where it argues for one:
+
+  | | Older version | Why |
+  |---|---|---|
+  | Renders | **drop** | Dead weight, and the biggest reclaim in most jobs. |
+  | Caches | **drop**, if proven | Only when a readable scene names it, so it genuinely re-cooks. Otherwise review. |
+  | Dailies / comps | **review** | A v001 cut is a record of what was shown on a date. Your call, so it waits to be ticked. |
+  | Scenes | keep | Every version is kept. |
+  | Source, geo | keep | A `tex/v01` may hold a map `v03` does not, and the loss is unrecoverable. |
+  | Deliveries, docs | keep | What shipped, shipped. |
+  | Backups | drop | Disposable either way — the version is beside the point, and the reason says so. |
 - **A cache says which of three things it is.** *Proven* — a readable scene
   names it, so it re-cooks and the Used by column says from what. *Orphaned* —
   every scene was readable and none named it, so whatever made it is gone.
@@ -266,7 +277,7 @@ Archiver/
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
 ├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
-└── tests/                330 tests: python tests/run_all.py
+└── tests/                333 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -282,7 +293,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-330 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+333 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -308,7 +319,7 @@ release; tags containing `-beta` are marked as prereleases automatically.
 
 ## Status
 
-**Beta, v0.6.5.** All six steps of the wizard are built, plus the Cinema 4D
+**Beta, v0.7.0.** All six steps of the wizard are built, plus the Cinema 4D
 asset export that closes the `.c4d` blind spot. See
 [CHANGELOG.md](CHANGELOG.md).
 
