@@ -158,7 +158,7 @@ def stage(root, paths, dry_run=True, progress=None):
     Nothing is deleted. Returns (moved, failed) -- manifest entries for what
     moved, and (path, reason) for what did not.
 
-    Refuses rather than guesses in four cases, each a real way to lose work:
+    Refuses rather than guesses in five cases, each a real way to lose work:
 
       - a path outside the project root. The selection should never produce
         one, but the consequence if it did is severe enough to check.
@@ -166,6 +166,11 @@ def stage(root, paths, dry_run=True, progress=None):
       - anything already inside _toDelete, which would nest staging in
         staging and make a restore ambiguous.
       - a path that has vanished since the scan.
+      - anything the user marked "never delete". The selection layer already
+        refuses to tick those, so reaching here means something went wrong
+        upstream -- which is exactly when a second, independent refusal
+        earns its place. Marks are re-read from disk here rather than passed
+        in, so this holds even for a caller that knows nothing about them.
 
     A failure part-way leaves the remaining entries untouched, and the
     manifest is written for whatever did move -- so a restore always has an
@@ -175,6 +180,12 @@ def stage(root, paths, dry_run=True, progress=None):
     staging = staging_dir(root)
     root_key = key(root)
     staging_key = key(staging)
+
+    # Read straight from disk: this refusal must not depend on the caller
+    # having remembered to pass anything. A protection that only worked when
+    # the UI cooperated would not be a protection.
+    from . import protection as _protection
+    marks, _marks_error = _protection.load(root)
 
     existing = read_manifest(root) if not dry_run else []
     fresh = []
@@ -197,6 +208,34 @@ def stage(root, paths, dry_run=True, progress=None):
             continue
         if not os.path.exists(path):
             failed.append((path, "no longer on disk"))
+            continue
+        if marks.is_protected(path):
+            # Name the mark that did it when it is an ancestor, or the
+            # refusal sends someone hunting for a mark they cannot see.
+            owner = marks.protected_by(path)
+            owner_path = key(root + "/" + owner) if owner and owner != "." \
+                else root_key
+            if owner_path == path_key:
+                failed.append((path, "marked never delete"))
+            else:
+                failed.append((path, "inside %s, which is marked never delete"
+                                     % (owner if owner != "." else "the "
+                                        "project")))
+            continue
+
+        # A folder is moved WHOLE, so a protected file anywhere inside it
+        # would travel with it -- protection bypassed silently, which is the
+        # one outcome this must never allow. Checking only the path handed in
+        # is not enough; the subtree has to be clean too.
+        inside = [m for m in marks.paths()
+                  if key(m).startswith(path_key + "/")]
+        if inside:
+            relative = inside[0][len(root) + 1:]
+            failed.append((path, "holds %s, which is marked never delete"
+                                 % relative
+                                 if len(inside) == 1 else
+                                 "holds %d things marked never delete"
+                                 % len(inside)))
             continue
 
         relative = path[len(root):].lstrip("/")

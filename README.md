@@ -1,6 +1,6 @@
 # Archiver
 
-**Beta — v0.7.1.** Working and used on real jobs, but not yet proven on
+**Beta — v0.8.0.** Working and used on real jobs, but not yet proven on
 anybody else's machine or anybody else's projects. Read
 [Before you try it](#before-you-try-it) first.
 
@@ -50,7 +50,7 @@ python archiver.py "D:/Projects/shot" --json out.json
 Check it works before pointing it at anything you care about:
 
 ```
-python tests/run_all.py            # 346 tests, ~2 seconds
+python tests/run_all.py            # 376 tests, ~2 seconds
 ```
 
 The CLI needs nothing but the standard library, so if PySide6 will not install
@@ -114,6 +114,15 @@ whose scene has been deleted share a category but get different verdicts.
 - **Nothing irreplaceable is ever dropped for being unreferenced.** An
   unreferenced texture is still a texture. Reference evidence can only move a
   verdict *toward* keep, never toward drop.
+- **You can overrule it permanently.** Right-click any folder *or file* →
+  **Never delete**. A verdict is what the scan worked out; a mark is what you
+  know, and it wins for good. Marks are saved beside the project in
+  `.archiver_protected.json` as relative paths, so they survive rescans and
+  restarts and keep working if you move or rename the job. A marked folder
+  covers everything inside it; a marked file covers just that file. Nothing
+  marked can be ticked, "Tick all Drop" skips it, and staging refuses it
+  again on its own — including a folder that merely *holds* something marked,
+  since folders are moved whole.
 - **"A newer version exists" means different things for different files.** A
   `render/v01` beside a `render/v03` is usually the largest reclaimable thing
   in a project. A `shot_v001.hip` beside a `shot_v003.hip` is not old, it is
@@ -265,7 +274,12 @@ tree is where the answers land, with frame sequences collapsed to one row:
 So the bars ask *what*, the tree asks *where*, and the checkbox decides
 whether the two combine.
 
-Right-click any row for *Show in Explorer* or *Copy path*.
+**Selecting in bulk.** Shift-click a checkbox to fill the range from the last
+one you touched, or press and drag across boxes to paint them all to the state
+of the first. Both work on what is visible, so a collapsed branch is never
+ticked behind your back.
+
+Right-click any row for *Never delete*, *Show in Explorer* or *Copy path*.
 
 ---
 
@@ -288,7 +302,7 @@ Archiver/
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
 ├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
-└── tests/                346 tests: python tests/run_all.py
+└── tests/                376 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -304,7 +318,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-346 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+376 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -330,7 +344,7 @@ release; tags containing `-beta` are marked as prereleases automatically.
 
 ## Status
 
-**Beta, v0.7.1.** All six steps of the wizard are built, plus the Cinema 4D
+**Beta, v0.8.0.** All six steps of the wizard are built, plus the Cinema 4D
 asset export that closes the `.c4d` blind spot. See
 [CHANGELOG.md](CHANGELOG.md).
 

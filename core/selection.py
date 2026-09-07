@@ -46,15 +46,46 @@ class Selection(object):
     which matters because acting on the selection triggers exactly that.
     """
 
-    def __init__(self, root_node):
+    def __init__(self, root_node, protected=None):
         self.root = root_node
         self._chosen = set()          # keys of explicitly selected nodes
+        # What the user said must never go. The FIRST of two independent
+        # refusals -- staging refuses again on its own, because a protection
+        # enforced only by a greyed-out checkbox is a suggestion.
+        self.protected = protected
 
     # -- state --------------------------------------------------------------
 
     def is_selected(self, node):
         """True when this node is selected, itself or through an ancestor."""
         return self._covered(key(node.path))
+
+    def is_protected(self, node):
+        """
+        True when this node cannot be staged.
+
+        Either the folder itself is marked, or it CONTAINS something marked.
+        The second half matters: a folder is staged whole, so one protected
+        file inside it makes the whole folder unstageable. Without this the
+        tree would happily tick it, staging would refuse just that file, and
+        the result would be a half-moved folder -- the worst outcome, since
+        it looks like it worked.
+        """
+        if self.protected is None:
+            return False
+        if self.protected.is_protected(node.path):
+            return True
+        return self._contains_protected(node)
+
+    def _contains_protected(self, node):
+        """Is anything marked sitting inside this node's subtree?"""
+        if self.protected is None:
+            return False
+        node_key = key(node.path)
+        for path in self.protected.paths():
+            if key(path).startswith(node_key + "/"):
+                return True
+        return False
 
     def _covered(self, node_key):
         if node_key in self._chosen:
@@ -90,6 +121,18 @@ class Selection(object):
         would leave orphaned children behind and the tree would disagree with
         itself.
         """
+        # A node that is ITSELF marked can never be selected. Deselecting is
+        # always allowed -- refusing that would be refusing to make something
+        # safer.
+        #
+        # A node that merely CONTAINS something marked is different: refusing
+        # it outright would make one protected file un-tick a whole branch,
+        # so it is selected and then split apart below, keeping everything
+        # except the protected part.
+        if selected and self.protected is not None \
+                and self.protected.is_protected(node.path):
+            return
+
         node_key = key(node.path)
 
         # Either way, everything below is now governed by this node.
@@ -100,6 +143,11 @@ class Selection(object):
             # If an ancestor is already selected this changes nothing.
             if not self._covered(node_key):
                 self._chosen.add(node_key)
+            # Selecting a parent must not quietly swallow a protected child.
+            # The subtree rule means one key covers everything below it, so
+            # without this a mark deeper down would be staged by a tick far
+            # above it -- the one place protection could leak.
+            self._exclude_protected(node)
             return
 
         self._chosen.discard(node_key)
@@ -110,6 +158,27 @@ class Selection(object):
         ancestor = self._selected_ancestor(node_key)
         if ancestor is not None:
             self._explode(ancestor, node_key)
+
+    def _exclude_protected(self, node):
+        """
+        Break the selection apart around any protected node beneath this one.
+
+        Reuses the same machinery that makes deselecting a child work: the
+        covering ancestor is replaced by its other children, recursively, so
+        what remains selected is everything the user asked for MINUS the
+        protected branches. Without it, protection would hold at the row you
+        ticked and leak on every row above it.
+        """
+        if self.protected is None:
+            return
+        for descendant in node.descendants():
+            if not self.is_protected(descendant):
+                continue
+            descendant_key = key(descendant.path)
+            ancestor = self._selected_ancestor(descendant_key)
+            if ancestor is not None:
+                self._explode(ancestor, descendant_key)
+            self._chosen.discard(descendant_key)
 
     def _selected_ancestor(self, node_key):
         for chosen in self._chosen:
@@ -166,6 +235,13 @@ class Selection(object):
         for node in self.root.descendants():
             if node.verdict == verdict and node.report \
                     and (node.report.count or node.report.is_empty):
+                # Skip anything staging would refuse -- a folder that is
+                # marked, or that HOLDS something marked. Ticking it would
+                # only produce a refusal at approve time, and a bulk button
+                # that quietly queues failures is worse than one that
+                # selects slightly less.
+                if self.is_protected(node):
+                    continue
                 self.set(node, True)
 
     # -- totals -------------------------------------------------------------

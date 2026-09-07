@@ -65,13 +65,19 @@ def copy_path(path):
     QtWidgets.QApplication.clipboard().setText(str(path))
 
 
-def add_reveal_menu(tree, path_for_item=None):
+def add_reveal_menu(tree, path_for_item=None, protection_for=None,
+                    on_protect=None):
     """
     Give a QTreeWidget a right-click menu with Show in Explorer.
 
     path_for_item(item) -> path lets a caller map its own rows; by default the
     path is read from Qt.UserRole on column 0, which is where every tree in
     this app already stores it.
+
+    Pass protection_for(path) -> (is_protected, owning_mark) and
+    on_protect(path, wanted) to add the "Never delete" entry. Both live here
+    rather than in each tree so the three places you can right-click offer
+    the same thing worded the same way.
     """
     if path_for_item is None:
         def path_for_item(item):
@@ -87,6 +93,30 @@ def add_reveal_menu(tree, path_for_item=None):
         path = str(path)
 
         menu = QtWidgets.QMenu(tree)
+
+        if protection_for is not None and on_protect is not None:
+            protected, owner = protection_for(path)
+            if protected and owner is not None and not owner[1]:
+                # Protected by an ANCESTOR. Offering "unprotect" here would
+                # have to remove the parent's mark, which would unprotect its
+                # siblings too -- so say where the mark is instead of doing
+                # something surprising.
+                entry = menu.addAction("Protected by %s" % owner[0])
+                entry.setEnabled(False)
+            elif protected:
+                entry = menu.addAction("Never delete")
+                entry.setCheckable(True)
+                entry.setChecked(True)
+                entry.triggered.connect(
+                    lambda _c=False, p=path: on_protect(p, False))
+            else:
+                entry = menu.addAction("Never delete")
+                entry.setCheckable(True)
+                entry.setChecked(False)
+                entry.triggered.connect(
+                    lambda _c=False, p=path: on_protect(p, True))
+            menu.addSeparator()
+
         label = ("Show folder in Explorer" if os.path.isdir(path)
                  else "Show file in Explorer")
 

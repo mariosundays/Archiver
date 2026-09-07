@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.8.0 -- 2026-09-07
+
+### Added
+
+- **"Never delete" marks, on folders AND files.** Right-click anything in the
+  tree or the findings tab and mark it keep-forever. A verdict is what the
+  scan worked out; a mark is what you KNOW, and it outranks the scan
+  permanently -- so it does not overwrite the verdict, which would lose why
+  the thing looked droppable in the first place.
+
+  Saved to `.archiver_protected.json` beside the project, as RELATIVE paths,
+  so marks survive rescans, restarts and reinstalls, and keep working when
+  the project is moved or renamed. A marked folder covers everything under
+  it; a marked file covers exactly itself, which is the case folder-only
+  marks cannot express -- one irreplaceable file in an otherwise disposable
+  folder.
+
+  Enforced in two independent places, on purpose: the selection will not tick
+  a protected thing, and staging refuses it again having read the marks off
+  disk itself. A protection that only greyed out a checkbox would be a
+  suggestion.
+
+- **Shift-click and drag-to-paint on the checkboxes.** Shift-click a box to
+  fill the range from the last one you touched; press and drag across boxes
+  to paint them all to the state of the first. Both work on the visible order
+  and leave collapsed branches alone -- a range that silently ticked things
+  hidden inside a folded branch would be a selection nobody could check
+  before approving it.
+
+### Fixed
+
+- **Staging a folder used to move a protected file inside it.** Folders are
+  moved whole, so checking only the path handed to `stage()` let a mark
+  deeper down travel with its parent -- protection bypassed silently, which
+  is the one outcome it exists to prevent. Both the subtree and the path
+  itself are checked now, and the refusal names the mark responsible.
+- "Tick all Drop" skips anything staging would refuse, rather than queueing
+  failures for approve time.
+
 ## 0.7.1 -- 2026-09-07
 
 ### Added

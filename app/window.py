@@ -33,10 +33,12 @@ import os
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt
 
-from core import actions, report, rules, scanner, selection, tree
+from core import (actions, protection, report, rules, scanner,
+                  selection, tree)
 from core.scanner import human
 
 from .backupdlg import BackupDialog
+from .bulkcheck import BulkCheckTree
 from .bars import (CATEGORY_FILL, Legend, SizeBarDelegate,
                    StackedBar, VERDICT_FILL, verdict_icon)
 from .detail import DetailPanel
@@ -221,6 +223,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # scope can re-ask it: ("category"|"verdict"|"folder", value).
         self._request = (None, None)
         self.current_node = None    # the folder selected in the tree
+        # Folders and files the user said must never go. Loaded per project
+        # and saved the moment one changes -- a protection that only existed
+        # until the next crash would be worse than not offering one.
+        self.protected = None
         self._syncing = False
         self.pool = QtCore.QThreadPool()
         self.worker = None
@@ -319,7 +325,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         layout.addLayout(self._build_strips())
 
-        self.folder_tree = QtWidgets.QTreeWidget()
+        # Shift-click a box for a range, or drag across boxes to paint
+        # them. Ticking fifty rows one at a time is typing, not deciding.
+        self.folder_tree = BulkCheckTree()
         self.folder_tree.setHeaderLabels(
             ["Folder", "Size", "Share", "Files", "Verdict", "Age"])
         self.folder_tree.setAlternatingRowColors(True)
@@ -335,6 +343,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_tree.itemDoubleClicked.connect(self._tree_activated)
         self.folder_tree.currentItemChanged.connect(self._on_tree_current)
         self.folder_tree.itemChanged.connect(self._on_item_checked)
+        self.folder_tree._bulk_init(self._bulk_set_tree,
+                                    self._bulk_can_tree)
 
         # The delegate goes on the WHOLE tree, not just the bar column: it
         # also suppresses Qt's focus rectangle, and that has to apply to every
@@ -350,7 +360,8 @@ class MainWindow(QtWidgets.QMainWindow):
             header.setSectionResizeMode(
                 column, QtWidgets.QHeaderView.ResizeToContents)
 
-        add_reveal_menu(self.folder_tree, _node_path)
+        add_reveal_menu(self.folder_tree, _node_path,
+                        self._protection_for, self._set_protected)
 
         # The file panel lives in a splitter so it can be dragged to any
         # height, and starts hidden -- it only makes sense once you have
@@ -475,7 +486,7 @@ class MainWindow(QtWidgets.QMainWindow):
         row.addWidget(self.findings_total)
         layout.addLayout(row)
 
-        self.findings = QtWidgets.QTreeWidget()
+        self.findings = BulkCheckTree()
         self.findings.setHeaderLabels(
             ["Folder", "Size", "Files", "Verdict", "Confidence", "Why",
              "Age"])
@@ -487,8 +498,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.findings.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers)
         self.findings.itemChanged.connect(self._on_finding_checked)
+        self.findings._bulk_init(self._bulk_set_finding,
+                                 self._bulk_can_finding)
         self.findings.currentItemChanged.connect(self._on_finding_current)
-        add_reveal_menu(self.findings, _node_path)
+        add_reveal_menu(self.findings, _node_path,
+                        self._protection_for, self._set_protected)
         header = self.findings.header()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
         # Interactive, not Stretch: Qt locks a stretched section so the
@@ -620,7 +634,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.result = result
         self.tree_root = tree.build(result)
-        self.selection = selection.Selection(self.tree_root)
+
+        # Marks live beside the project, so they arrive with it.
+        self.protected, marks_error = protection.load(result.root)
+        if marks_error:
+            # Never silent: if the file is unreadable the user must know
+            # their marks are not in force, not discover it afterwards.
+            QtWidgets.QMessageBox.warning(
+                self, "Archiver",
+                "The \"never delete\" marks for this project could not be "
+                "read, so nothing is protected right now:\n\n%s\n\n"
+                "Fix or delete that file before staging anything."
+                % marks_error)
+
+        self.selection = selection.Selection(self.tree_root, self.protected)
         # Everything else on screen is rebuilt from the new result, but the
         # drill-down panel is only ever filled by a user gesture, so nothing
         # would otherwise clear it -- it sat there showing the PREVIOUS
@@ -630,6 +657,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_panel.reset()
         self._close_file_panel()
         self._show_node(self.tree_root)
+        # The tree items are brand new, so the locks have to go back on.
+        self._refresh_protection_marks()
         self.select_drops.setEnabled(True)
         self._update_selection_label()
         self._fill_findings()
@@ -868,6 +897,134 @@ class MainWindow(QtWidgets.QMainWindow):
         # closed, and a scope toggle re-answers a question nobody is asking.
         self._request = (None, None)
         self.file_panel.hide()
+
+    # -- bulk ticking -------------------------------------------------------
+    #
+    # A tick is never just a checkbox: it goes through the Selection model so
+    # the tri-state parents stay honest. So the bulk gestures set state the
+    # same way a single click does, rather than writing check states directly
+    # and leaving the model behind.
+
+    def _bulk_can_tree(self, item):
+        node = item.data(0, Qt.UserRole)
+        if node is None or self.selection is None:
+            return False
+        # Protected rows are simply not paintable. Skipping them silently is
+        # right for a drag across many rows -- a dialog per protected folder
+        # would make the gesture useless.
+        return not self.selection.is_protected(node)
+
+    def _bulk_set_tree(self, item, checked):
+        node = item.data(0, Qt.UserRole)
+        if node is None or self.selection is None:
+            return
+        self.selection.set(node, checked)
+        self._sync_check_states()
+        self._sync_finding_states()
+        self._update_selection_label()
+
+    def _bulk_can_finding(self, item):
+        folder = item.data(0, Qt.UserRole)
+        if folder is None or self.selection is None:
+            return False
+        node = self._node_for_path(getattr(folder, "path", None))
+        return node is not None and not self.selection.is_protected(node)
+
+    def _bulk_set_finding(self, item, checked):
+        folder = item.data(0, Qt.UserRole)
+        if folder is None or self.selection is None:
+            return
+        node = self._node_for_path(getattr(folder, "path", None))
+        if node is None:
+            return
+        self.selection.set(node, checked)
+        self._sync_check_states()
+        self._sync_finding_states()
+        self._update_selection_label()
+
+    # -- protection ---------------------------------------------------------
+
+    def _protection_for(self, path):
+        """
+        (is_protected, (owner_label, is_this_exact_path)) for a menu.
+
+        The second half is what lets the menu say "Protected by B_SOURCE"
+        instead of offering an unprotect that would quietly unprotect a
+        parent's other children too.
+        """
+        if self.protected is None or not path:
+            return False, None
+        if not self.protected.is_protected(path):
+            return False, None
+        owner = self.protected.protected_by(path)
+        if owner is None:
+            return True, None
+        owner_path = (self.result.root if owner == "."
+                      else self.result.root + "/" + owner)
+        exact = scanner.key(owner_path) == scanner.key(str(path))
+        label = "the project" if owner == "." else owner
+        return True, (label, exact)
+
+    def _set_protected(self, path, wanted):
+        """Add or remove a mark, then save it immediately."""
+        if self.protected is None or not self.result:
+            return
+        if wanted:
+            self.protected.add(path)
+        else:
+            self.protected.remove(path)
+
+        _target, error = protection.save(self.result.root, self.protected,
+                                         dry_run=False)
+        if error:
+            QtWidgets.QMessageBox.warning(
+                self, "Archiver",
+                "That mark could not be saved, so it will be gone when you "
+                "close Archiver:\n\n%s" % error)
+
+        # A newly protected thing must not stay ticked from before it was
+        # marked -- the checkbox and the mark would then disagree, and the
+        # checkbox is what people read.
+        if wanted and self.selection is not None:
+            node = self._node_for_path(path)
+            if node is not None:
+                self.selection.set(node, False)
+
+        self._sync_check_states()
+        self._sync_finding_states()
+        self._update_selection_label()
+        self._refresh_protection_marks()
+        self.status.showMessage(
+            "%s marked never delete." % os.path.basename(str(path).rstrip("/"))
+            if wanted else
+            "%s is no longer protected."
+            % os.path.basename(str(path).rstrip("/")))
+
+    def _refresh_protection_marks(self):
+        """Repaint the lock column on both trees."""
+        self._mark_tree(self.folder_tree)
+        self._mark_tree(self.findings)
+
+    def _mark_tree(self, widget):
+        if self.protected is None:
+            return
+
+        def walk(item):
+            path = item.data(0, Qt.UserRole)
+            path = getattr(path, "path", path)
+            if path:
+                protected = self.protected.is_protected(str(path))
+                # A lock in the name column, not a whole extra column: this
+                # is rare state and an always-empty column costs every row.
+                text = item.text(0).lstrip("\U0001F512 ")
+                item.setText(0, ("\U0001F512 " + text) if protected else text)
+                if protected:
+                    item.setToolTip(0, "Marked never delete")
+            for i in range(item.childCount()):
+                walk(item.child(i))
+
+        for i in range(widget.topLevelItemCount()):
+            walk(widget.topLevelItem(i))
 
     # -- selection ----------------------------------------------------------
 
@@ -1222,6 +1379,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.findings_total.setText(
             "%d folders, %s" % (shown, human(total)))
         self._sync_finding_states()
+        # These rows are new every time the filters change, so the locks
+        # have to be painted back on or protection looks like it lapsed.
+        self._mark_tree(self.findings)
 
     # -- export -------------------------------------------------------------
 
