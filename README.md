@@ -1,6 +1,6 @@
 # Archiver
 
-**Beta — v0.8.0.** Working and used on real jobs, but not yet proven on
+**Beta — v0.8.1.** Working and used on real jobs, but not yet proven on
 anybody else's machine or anybody else's projects. Read
 [Before you try it](#before-you-try-it) first.
 
@@ -50,7 +50,7 @@ python archiver.py "D:/Projects/shot" --json out.json
 Check it works before pointing it at anything you care about:
 
 ```
-python tests/run_all.py            # 376 tests, ~2 seconds
+python tests/run_all.py            # 381 tests, ~2 seconds
 ```
 
 The CLI needs nothing but the standard library, so if PySide6 will not install
@@ -132,18 +132,20 @@ whose scene has been deleted share a category but get different verdicts.
   | | Older version | Why |
   |---|---|---|
   | Renders | **drop** | Dead weight, and the biggest reclaim in most jobs. |
-  | Caches | **drop**, if proven | Only when a readable scene names it, so it genuinely re-cooks. Otherwise review. |
+  | Caches | **drop**, if proven | Only when a readable scene names it, so it genuinely re-cooks — and even then the newest version stays review if a scene is still using it. |
   | Dailies / comps | **review** | A v001 cut is a record of what was shown on a date. Your call, so it waits to be ticked. |
   | Scenes | keep | Every version is kept. |
   | Source, geo | keep | A `tex/v01` may hold a map `v03` does not, and the loss is unrecoverable. |
   | Deliveries, docs | keep | What shipped, shipped. |
   | Backups | drop | Disposable either way — the version is beside the point, and the reason says so. |
-- **A cache says which of three things it is.** *Proven* — a readable scene
-  names it, so it re-cooks and the Used by column says from what. *Orphaned* —
-  every scene was readable and none named it, so whatever made it is gone.
-  *Unverified* — a scene could not be read, so nothing was checked. Only the
-  first drops. On a mixed Houdini/C4D project that distinction is the whole
-  decision.
+- **A cache says which of four things it is**, and none of them is an
+  automatic drop. *In use* — the last-saved scene reads it, so it is live
+  working data. *Read by older scenes* — a scene reads it but the work has
+  moved on, so it is a fair candidate. *Orphaned* — every scene was readable
+  and none named it, so whatever made it is gone and re-cooking may be
+  impossible. *Unverified* — a scene could not be read, so nothing was
+  checked. All four are review; the reason tells them apart. On a mixed
+  Houdini/C4D project that distinction is the whole decision.
 - **Slow sims are flagged as slow.** A FLIP or pyro cache is regenerable and
   that is beside the point; those rows say "SLOW to re-cook" so Drop never
   reads as free to lose.
@@ -302,7 +304,7 @@ Archiver/
 │   └── report.py         text and JSON rendering
 ├── app/                  PySide6 UI
 ├── c4d_plugin/           Cinema 4D asset export + sync_to_c4d.ps1
-└── tests/                376 tests: python tests/run_all.py
+└── tests/                381 tests: python tests/run_all.py
 ```
 
 `core/` never imports Qt, `hou`, or `c4d`, so the rules are testable without a
@@ -318,7 +320,7 @@ the scanned tree and fails if a scan changed a single byte.
 python tests/run_all.py
 ```
 
-376 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
+381 tests, no Houdini, no Cinema 4D, no dependencies. The Qt-dependent ones
 skip cleanly when PySide6 is absent. The staging tests are the most paranoid
 in the suite: most of them assert what must NOT happen.
 
@@ -344,7 +346,7 @@ release; tags containing `-beta` are marked as prereleases automatically.
 
 ## Status
 
-**Beta, v0.8.0.** All six steps of the wizard are built, plus the Cinema 4D
+**Beta, v0.8.1.** All six steps of the wizard are built, plus the Cinema 4D
 asset export that closes the `.c4d` blind spot. See
 [CHANGELOG.md](CHANGELOG.md).
 

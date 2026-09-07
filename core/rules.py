@@ -631,7 +631,8 @@ def classify(path, root, is_dir=False):
 
 
 def verdict_for(category, referenced=None, superseded=False,
-                scene_missing=False, trust_references=True):
+                scene_missing=False, trust_references=True,
+                read_by_newest=False):
     """
     Turn a category plus evidence into a verdict, with a reason.
 
@@ -685,9 +686,29 @@ def verdict_for(category, referenced=None, superseded=False,
     # Collapsing the last two into one "unreferenced" verdict is what makes a
     # tool untrustworthy on mixed projects: a 40-minute sim whose C4D scene
     # cannot be read reads identically to genuine junk.
+    # A referenced cache is NEVER an automatic drop. "A scene reads this" is
+    # evidence that it is IN USE, and the same fact makes a referenced render
+    # a KEEP twenty lines below -- reading it as "safe to delete" for caches
+    # alone was the one place in this file where the same evidence pointed
+    # two opposite ways. It cost a 1 GB geo cache that ten live .hiplc scenes
+    # load being offered as the biggest drop in the project.
+    #
+    # Which scene reads it is the useful distinction, so the reason says so:
+    #
+    #   THE NEWEST SCENE reads it -- this is live working data. Regenerable
+    #                     in principle, but you are still using it.
+    #   ONLY OLDER SCENES read it -- the work has moved on, so it is a fair
+    #                     candidate; still yours to tick, never automatic.
     if category == CAT_CACHE and referenced:
-        return DROP, ("Regenerable -- a scene in this project reads it, so "
-                      "it can be re-cooked.", "a scene here reads it")
+        if read_by_newest:
+            return REVIEW, (
+                "In use -- the most recently saved scene in this project "
+                "reads it. Re-cookable, but you are still working with it.",
+                "in use by the newest scene")
+        return REVIEW, ("Re-cookable -- a scene in this project reads it, so "
+                        "it can be rebuilt. Only older scenes read it, so "
+                        "the work may have moved on.",
+                        "re-cookable, read by older scenes")
 
     if category == CAT_CACHE and scene_missing:
         return REVIEW, ("No scene in this project references it. Whatever "
@@ -758,7 +779,8 @@ def confidence(signals):
 
 
 def drop_signals(category, superseded=False, referenced=None,
-                 trust_references=True, expensive=False):
+                 trust_references=True, expensive=False,
+                 read_by_newest=False):
     """
     The independent reasons to believe something is safe to drop.
 
@@ -776,8 +798,11 @@ def drop_signals(category, superseded=False, referenced=None,
     if category in (CAT_RENDER, CAT_COMP) and not expensive:
         signals.append("it is output, re-makeable from the scene")
 
-    if category == CAT_CACHE and referenced and trust_references:
-        signals.append("a readable scene names it, so it re-cooks")
+    # NOT a drop signal any more. Being read by a live scene argues that a
+    # cache is in use; counting it as evidence FOR dropping was the same
+    # inversion verdict_for used to make.
+    if category == CAT_CACHE and referenced and trust_references             and not read_by_newest:
+        signals.append("only older scenes read it, so it re-cooks")
 
     if category in (CAT_BACKUP, CAT_TEMP):
         signals.append("its folder marks it as disposable")

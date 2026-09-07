@@ -701,8 +701,23 @@ def _split_reason(reason):
     return reason, reason
 
 
+def _read_by_newest(entry, newest_scene):
+    """
+    Is the most recently saved scene one of the scenes that reads this?
+
+    used_by holds the scenes that name a file, so this is a membership test
+    rather than a guess. Compared through key() because the paths come from
+    two places -- the walk and the scene scrape -- and Windows case would
+    otherwise make an exact match fail silently.
+    """
+    if not newest_scene or not entry.used_by:
+        return False
+    newest = key(newest_scene)
+    return any(key(scene) == newest for scene in entry.used_by)
+
+
 def _folder_verdict(folder, scene_count, superseded_folders=(),
-                    trust_references=True):
+                    trust_references=True, newest_scene=None):
     """
     One folder's verdict, from the files in it.
 
@@ -753,6 +768,7 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             superseded=entry.superseded,
             scene_missing=scene_missing,
             trust_references=trust_references,
+            read_by_newest=_read_by_newest(entry, newest_scene),
         )
         if best is None \
                 or rules.VERDICT_ORDER[verdict] < rules.VERDICT_ORDER[best]:
@@ -790,7 +806,9 @@ def _folder_verdict(folder, scene_count, superseded_folders=(),
             superseded=folder.superseded,
             referenced=any(e.referenced for e in folder.entries),
             trust_references=trust_references,
-            expensive=rules.is_expensive_sim(folder.path))
+            expensive=rules.is_expensive_sim(folder.path),
+            read_by_newest=any(_read_by_newest(e, newest_scene)
+                               for e in folder.entries))
         if folder.superseded and _policy is not None:
             best_reason = ("Superseded -- a higher version of this folder "
                            "exists alongside it.")
@@ -888,8 +906,12 @@ def scan(root, progress=None, scene_progress=None):
             folder.is_empty = True
             result.empty_folders.append(path)
 
+        # scenes is sorted newest first, so scenes[0] is the last one saved.
+        # Which scene reads a cache is the difference between live working
+        # data and something the work has moved past.
         folder.verdict, folder.reason = _folder_verdict(
-            folder, len(scenes), superseded_folders, trust)
+            folder, len(scenes), superseded_folders, trust,
+            newest_scene=scenes[0].path if scenes else None)
         result.folders.append(folder)
 
     result.folders.sort(key=lambda f: rules.sort_key(f.verdict, f.size))

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.8.1 -- 2026-09-07
+
+### Fixed
+
+- **A cache that a scene reads is no longer an automatic drop.** "A readable
+  scene references this" was treated as proof the cache was safe to delete --
+  while twenty lines below, the same evidence made a referenced RENDER a
+  *keep* for being "still in use". One fact, two opposite conclusions, in the
+  same file.
+
+  Caught on a real project: `A_PROJ/HD/geo`, 1.0 GB read by ten live `.hiplc`
+  scenes, offered as the single biggest Drop in the job.
+
+  A referenced cache is now **review** either way, and the reason says which
+  case it is:
+
+  | Which scene reads it | Reason shown |
+  |---|---|
+  | The last-saved scene | *in use by the newest scene* — live working data |
+  | Only older scenes | *re-cookable, read by older scenes* — the work moved on |
+
+  Both stay tickable; neither is offered automatically. Being read by a live
+  scene is evidence toward keeping, which is what the tool's cardinal rule
+  has always said everywhere else.
+
+- Being referenced no longer counts as a drop *signal* for a cache in use, so
+  confidence stops agreeing with a verdict the evidence contradicts.
+
 ## 0.8.0 -- 2026-09-07
 
 ### Added

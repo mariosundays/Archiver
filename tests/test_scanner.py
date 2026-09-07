@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -134,9 +135,12 @@ class TestVerdicts(ProjectCase):
     def test_delivery_kept(self):
         self.assertEqual(self.verdict("delivery"), rules.KEEP)
 
-    def test_referenced_cache_drops(self):
-        # Referenced by folder, so re-cookable -- the safe kind of drop.
-        self.assertEqual(self.verdict("geo"), rules.DROP)
+    def test_referenced_cache_reviews_rather_than_drops(self):
+        # A scene reading a cache says it is IN USE. The same evidence makes
+        # a referenced render a KEEP, so dropping caches on it had one fact
+        # pointing two opposite ways -- and offered a 1 GB geo cache that ten
+        # live scenes load as the biggest drop in a real project.
+        self.assertEqual(self.verdict("geo"), rules.REVIEW)
 
     def test_orphan_cache_reviews(self):
         # Nothing references it, so re-cooking may be impossible.
@@ -145,6 +149,47 @@ class TestVerdicts(ProjectCase):
     def test_renders_review(self):
         self.assertIn(self.verdict("render/v02"),
                       (rules.REVIEW, rules.KEEP))
+
+
+class TestWhichSceneReadsTheCache(unittest.TestCase):
+    """
+    Mario's rule: a cache read by the LAST SAVED scene is live working data;
+    one read only by older scenes is something the work has moved past. Both
+    are review -- the difference is what the row says, and that is what he
+    reads before ticking.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="archiver_newest_").replace(
+            "\\", "/")
+        for frame in range(3):
+            write(self.root + "/geo/sim.%04d.bgeo.sc" % frame)
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def geo(self):
+        result = scanner.scan(self.root)
+        for folder in result.folders:
+            if folder.relative == "geo":
+                return folder
+        self.fail("no geo folder")
+
+    def test_read_by_the_newest_scene_says_in_use(self):
+        fake_hip(self.root + "/scenes/old.hip", [self.root + "/geo"])
+        time.sleep(1.1)          # mtime resolution
+        fake_hip(self.root + "/scenes/new.hip", [self.root + "/geo"])
+        folder = self.geo()
+        self.assertEqual(folder.verdict, rules.REVIEW)
+        self.assertIn("in use", folder.reason_short)
+
+    def test_read_only_by_older_scenes_says_so(self):
+        fake_hip(self.root + "/scenes/old.hip", [self.root + "/geo"])
+        time.sleep(1.1)
+        fake_hip(self.root + "/scenes/new.hip", [self.root + "/tex"])
+        folder = self.geo()
+        self.assertEqual(folder.verdict, rules.REVIEW)
+        self.assertIn("older", folder.reason_short)
 
 
 class TestReferences(ProjectCase):
@@ -280,15 +325,16 @@ class TestOpaqueScenes(unittest.TestCase):
         finally:
             shutil.rmtree(root, ignore_errors=True)
 
-    def test_referenced_cache_still_drops_despite_opaque_scenes(self):
-        # Evidence we DID find stands, whatever else was unreadable.
+    def test_referenced_cache_is_reviewed_despite_opaque_scenes(self):
+        # Evidence we DID find stands, whatever else was unreadable -- it
+        # just no longer argues for dropping.
         write(self.root + "/geo/sim.bgeo")
         fake_hip(self.root + "/scenes/other.hip",
                  [self.root + "/geo/sim.bgeo"])
         result = scanner.scan(self.root)
         self.assertFalse(result.references_trustworthy)
         folder = [f for f in result.folders if f.relative == "geo"][0]
-        self.assertEqual(folder.verdict, rules.DROP)
+        self.assertEqual(folder.verdict, rules.REVIEW)
 
 
 class TestAssetSidecars(unittest.TestCase):
@@ -487,11 +533,14 @@ class TestGeneratedGeometry(unittest.TestCase):
         write(self.root + "/cache/sim.abc", b"x" * 4096)
         self.assertEqual(self.folder_of("cache").category, rules.CAT_CACHE)
 
-    def test_referenced_alembic_drops(self):
+    def test_referenced_alembic_is_a_cache_but_not_an_automatic_drop(self):
+        # The classification is the point here -- an .abc in alembic/ is an
+        # EXPORT, not source material. Its verdict is review because a scene
+        # reads it, which means it is in use.
         write(self.root + "/alembic/xpTrail.abc", b"x" * 4096)
         fake_hip(self.root + "/scenes/uses.hip",
                  [self.root + "/alembic/xpTrail.abc"])
-        self.assertEqual(self.verdict_of("alembic"), rules.DROP)
+        self.assertEqual(self.verdict_of("alembic"), rules.REVIEW)
 
 
 class TestSequences(ProjectCase):

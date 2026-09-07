@@ -286,14 +286,39 @@ class TestCacheEvidence(unittest.TestCase):
     otherwise read exactly like genuine junk.
     """
 
-    def test_proven_cache_drops_and_says_so(self):
-        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True)
-        self.assertEqual(verdict, rules.DROP)
+    def test_a_referenced_cache_is_never_an_automatic_drop(self):
+        # "A scene reads this" is evidence the cache is IN USE. The same fact
+        # makes a referenced RENDER a keep, so reading it as "safe to delete"
+        # for caches alone had the same evidence pointing two opposite ways.
+        # It offered a 1 GB geo cache that ten live scenes load as the biggest
+        # drop in a real project.
+        verdict, _why = rules.verdict_for(rules.CAT_CACHE, referenced=True)
+        self.assertEqual(verdict, rules.REVIEW)
+
+    def test_the_newest_scene_reading_it_means_in_use(self):
+        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True,
+                                         read_by_newest=True)
+        self.assertEqual(verdict, rules.REVIEW)
+        self.assertIn("in use", why[1].lower())
         # (long, short): the column shows the short one, the detail strip the
         # long one. Both must say the same thing.
-        self.assertIn("reads it", why[0])
-        self.assertIn("reads it", why[1])
+        self.assertIn("in use", why[0].lower())
         self.assertLess(len(why[1]), len(why[0]))
+
+    def test_only_older_scenes_reading_it_says_the_work_moved_on(self):
+        verdict, why = rules.verdict_for(rules.CAT_CACHE, referenced=True,
+                                         read_by_newest=False)
+        self.assertEqual(verdict, rules.REVIEW)
+        self.assertIn("older", why[1])
+
+    def test_a_cache_in_use_is_not_a_drop_signal(self):
+        # Counting it inflated the confidence of a verdict it contradicted.
+        signals = rules.drop_signals(rules.CAT_CACHE, referenced=True,
+                                     read_by_newest=True)
+        self.assertFalse([s for s in signals if "re-cook" in s])
+        older = rules.drop_signals(rules.CAT_CACHE, referenced=True,
+                                   read_by_newest=False)
+        self.assertTrue([s for s in older if "re-cook" in s])
 
     def test_reasons_do_not_point_at_absent_columns(self):
         # The proven-cache reason used to say "check the Used by column",
@@ -332,11 +357,12 @@ class TestCacheEvidence(unittest.TestCase):
         # Why column actually shows.
         self.assertEqual(len({proven[1], orphan[1], unknown[1]}), 3)
 
-    def test_a_proven_cache_drops_even_with_unreadable_scenes_around(self):
-        # Evidence found stands whatever else could not be read.
+    def test_a_proven_cache_is_reviewed_even_with_unreadable_scenes_around(self):
+        # Evidence found stands whatever else could not be read -- it just
+        # no longer argues for DROP.
         verdict, _why = rules.verdict_for(rules.CAT_CACHE, referenced=True,
                                           trust_references=False)
-        self.assertEqual(verdict, rules.DROP)
+        self.assertEqual(verdict, rules.REVIEW)
 
 
 class TestExpensiveSim(unittest.TestCase):
