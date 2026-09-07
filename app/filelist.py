@@ -98,6 +98,21 @@ class FileListPanel(QtWidgets.QWidget):
         add_reveal_menu(self.table)
         layout.addWidget(self.table, 1)
 
+    def reset(self):
+        """
+        Forget the project this panel was showing.
+
+        A new scan replaces everything else on screen, so a panel still
+        listing the LAST project's files reads as part of the new one --
+        and the rows it holds carry real paths, which is how someone ends
+        up looking at a stale 1.4 GB of drops that belong to a job they
+        already archived. Empty it and close it; the segment that opened
+        it may not even exist in the new scan.
+        """
+        self._root = ""
+        self.table.clear()
+        self.title.setText("")
+
     def show_sequences(self, title, sequences, root):
         """
         Fill the panel. sequences comes from scanner.group_sequences().

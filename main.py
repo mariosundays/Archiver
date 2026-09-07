@@ -45,11 +45,15 @@ def _claim_taskbar_identity():
         pass    # cosmetic only - never block startup over it
 
 
-def main():
-    _claim_taskbar_identity()
-    app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("Archiver")
+def apply_style(app):
+    """
+    The look, applied to an existing QApplication.
 
+    Split out of main() so anything that builds a window WITHOUT going
+    through main() -- a test harness, a screenshot rig -- gets the same
+    style. When this lived inline, a rig that skipped it rendered the
+    Windows accent over the size bars and looked like a live regression.
+    """
     # Fusion, not the platform style. The Windows 11 style paints its own
     # accent-coloured highlight over the current tree row (#a94dc1 by default),
     # which lands on top of the size bars and reads as an error outline -- and
@@ -71,6 +75,13 @@ def main():
         palette.setColor(group, QtGui.QPalette.HighlightedText,
                          QtGui.QColor("#e8e8e8"))
     app.setPalette(palette)
+
+
+def main():
+    _claim_taskbar_identity()
+    app = QtWidgets.QApplication(sys.argv)
+    app.setApplicationName("Archiver")
+    apply_style(app)
 
     app.setWindowIcon(app_icon())
 

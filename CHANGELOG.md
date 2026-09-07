@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.5 -- 2026-09-07
+
+### Fixed
+
+- **The drill-down panel kept the PREVIOUS project's files after a rescan.**
+  Scanning a new project rebuilt the tree, the strips, the findings and the
+  summary, but the panel under the tree is only ever filled by a double-click,
+  so no refill path touched it -- it stayed open beneath the new project's
+  tree, still listing the old one's files under a header reading "Drop
+  folders -- 1.4 GB in 559 files" while the summary above said "Drop 0 B".
+  It mattered because those rows carry real paths and a Show in Explorer:
+  the panel was inviting decisions about a job that had already been
+  archived. It is now emptied and closed on every scan -- closed rather than
+  refilled, because the bar segment that opened it may not exist in the new
+  project. Every mutating action (prune, stage, restore) rescans, so all of
+  them are covered.
+
+### Changed
+
+- **The style is applied by `main.apply_style(app)` instead of inline in
+  `main()`.** A screenshot rig that built a window without going through
+  `main()` missed the pinned palette and rendered the Windows accent over
+  the size bars -- the exact bug 0.2.x fixed, resurrected as a false alarm.
+  Anything that builds a window can now apply the real style.
+
 ## 0.6.4 -- 2026-09-06
 
 ### Changed

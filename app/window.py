@@ -616,6 +616,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.result = result
         self.tree_root = tree.build(result)
         self.selection = selection.Selection(self.tree_root)
+        # Everything else on screen is rebuilt from the new result, but the
+        # drill-down panel is only ever filled by a double-click, so nothing
+        # would otherwise clear it -- it sat there showing the PREVIOUS
+        # project's files under the new project's tree.
+        self.file_panel.reset()
+        self._close_file_panel()
         self._show_node(self.tree_root)
         self.select_drops.setEnabled(True)
         self._update_selection_label()
